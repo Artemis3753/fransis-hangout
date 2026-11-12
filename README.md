@@ -56,6 +56,25 @@ npm run typecheck   # worker, tests and frontend
 
 Tests run at one seam: the HTTP API. Each test starts with a clean database built from the real migrations in `migrations/`.
 
+## Deploy
+
+You need a free Cloudflare account and `npx wrangler login` once.
+
+```sh
+# 1. Set the production organizer key (prompted, never echoed). Creates the Worker if it does not exist yet.
+npx wrangler secret put ORGANIZER_KEY
+
+# 2. Build and deploy. The first deploy also creates the D1 database named in wrangler.jsonc.
+npm run deploy
+
+# 3. Create the tables in the production database (first deploy, and after adding a migration).
+npx wrangler d1 migrations apply fransis-hangout-db --remote
+```
+
+`wrangler deploy` prints the site's default `workers.dev` address. Per-version preview URLs are turned off in `wrangler.jsonc`, so that is the only address.
+
+Create the first poll against the production address with the same `curl` as above, using the production key. In zsh, `read -s "KEY?Organizer key: "` stores it without showing it.
+
 ## Conventions
 
 - Dates are plain calendar dates (`YYYY-MM-DD`) with no time zone, so a day never shifts with the viewer's device settings.

@@ -4,6 +4,10 @@
   "name": "fransis-hangout",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-08-01",
+  // 기본 주소(workers.dev)로만 연다. 버전마다 따로 생기는 미리보기 주소는 비공개 사이트에
+  // 접근 경로만 늘리므로 끈다.
+  "workers_dev": true,
+  "preview_urls": false,
   "assets": {
     "directory": "./dist",
     // /p/<조사 id> 같은 주소를 열어도 index.html을 돌려줘서 화면이 뜨게 한다.
