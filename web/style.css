@@ -4,6 +4,7 @@
   --muted: #6b665e;
   --accent: #2f5d50;
   --border: #e3dfd6;
+  --error: #b3261e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -13,6 +14,7 @@
     --muted: #a09b92;
     --accent: #7fc4ad;
     --border: #2c2e31;
+    --error: #ff8a7a;
   }
 }
 
@@ -65,4 +67,58 @@ h1 {
 
 .muted {
   color: var(--muted);
+}
+
+.participation {
+  margin-top: 1.5rem;
+}
+
+.join-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.join-form label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* 입력칸 글자를 16px 이상으로 둬야 iOS Safari가 포커스 때 화면을 확대하지 않는다. */
+.join-form input {
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.join-form button {
+  min-height: 2.75rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.join-form button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.error {
+  margin: 0;
+  min-height: 1.5em;
+  color: var(--error);
+}
+
+.joined {
+  margin: 0;
+  font-weight: 600;
+  color: var(--accent);
 }

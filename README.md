@@ -47,6 +47,8 @@ curl -X POST http://localhost:8787/api/polls \
 
 The response contains the poll's public `id`. Share `/p/<id>` with the group. A poll can span at most 92 days (both ends counted) and its title at most 60 characters.
 
+Friends join a poll by name, with no login: they open `/p/<id>` and type a name (at most 20 characters, unique within the poll ignoring case, surrounding spaces and Hangul composition form; at most 30 people per poll). The browser remembers the join on that device.
+
 ## Test
 
 ```sh
@@ -54,7 +56,7 @@ npm test            # API tests: requests go in through the HTTP API, a real loc
 npm run typecheck   # worker, tests and frontend
 ```
 
-Tests run at one seam: the HTTP API. Each test starts with a clean database built from the real migrations in `migrations/`.
+Tests run at one seam: the HTTP API. The database is built from the real migrations in `migrations/`. The test setup clears every table before each test, and `test/harness.test.ts` checks that no data leaks from one test to the next. (Without that cleanup, data from earlier tests was visible in later ones.)
 
 ## Deploy
 

@@ -11,14 +11,35 @@ app.use("*", async (c, next) => {
 
 const MAX_POLL_DAYS = 92;
 const MAX_TITLE_LENGTH = 60;
+const MAX_NAME_LENGTH = 20;
+const MAX_RESPONDENTS = 30;
 
-// 공개 id가 곧 접근 권한이라서, 추측이 불가능하도록 암호학적 난수 128비트를 쓴다.
-function newPollId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
+// 암호학적 난수를 URL에 넣어도 안전한 문자열(base64url)로 바꾼다.
+function randomBase64Url(byteCount: number): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(byteCount));
   return btoa(String.fromCharCode(...bytes))
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replaceAll("=", "");
+}
+
+// 공개 id가 곧 접근 권한이라서, 추측이 불가능하도록 128비트를 쓴다.
+const newPollId = () => randomBase64Url(16);
+
+// 수정 토큰은 "이 응답자 본인"임을 증명하는 비밀이라 256비트로 더 길게 만든다.
+const newEditToken = () => randomBase64Url(32);
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+// 요청 본문이 JSON 객체일 때만 돌려준다. JSON이 아니거나 null·배열이면 null이라서,
+// 호출한 쪽이 서버 오류(500) 대신 400으로 답할 수 있다.
+async function readJsonObject(request: Request): Promise<Record<string, unknown> | null> {
+  const body: unknown = await request.json().catch(() => null);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  return body as Record<string, unknown>;
 }
 
 // 키를 글자 단위로 비교하면 응답 시간 차이로 키를 추측할 수 있어서,
@@ -52,12 +73,10 @@ app.post("/api/polls", async (c) => {
     return c.json({ error: { code: "ORGANIZER_KEY_INVALID" } }, 401);
   }
 
-  // 본문이 JSON이 아니거나 객체가 아니면 서버 오류(500)가 아니라 400으로 돌려준다.
-  const body: unknown = await c.req.json().catch(() => null);
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+  const input = await readJsonObject(c.req.raw);
+  if (input === null) {
     return c.json({ error: { code: "INVALID_REQUEST" } }, 400);
   }
-  const input = body as { title?: unknown; startDate?: unknown; endDate?: unknown };
   // 앞뒤 공백은 의미가 없으니 저장 전에 잘라 낸다.
   const title = typeof input.title === "string" ? input.title.trim() : "";
   if (title === "") {
@@ -115,6 +134,71 @@ app.get("/api/polls/:id", async (c) => {
   return c.json({
     poll: { id: row.id, title: row.title, startDate: row.start_date, endDate: row.end_date, status: row.status },
   });
+});
+
+// 로그인 없이 이름만으로 조사에 참여한다. 링크를 아는 사람은 누구나 할 수 있다.
+app.post("/api/polls/:id/respondents", async (c) => {
+  const poll = await c.env.DB.prepare("SELECT status FROM polls WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first<{ status: "open" | "closed" }>();
+  if (poll === null) {
+    return c.json({ error: { code: "POLL_NOT_FOUND" } }, 404);
+  }
+  if (poll.status === "closed") {
+    return c.json({ error: { code: "POLL_CLOSED" } }, 409);
+  }
+
+  const body = await readJsonObject(c.req.raw);
+  if (body === null) {
+    return c.json({ error: { code: "INVALID_REQUEST" } }, 400);
+  }
+  // 한글은 같은 글자도 "완성형"과 "자모를 풀어 쓴 형태"로 입력될 수 있어서(Mac 등) NFC로 통일한다.
+  // 길이를 세기 전에 통일해야 한다. 풀어 쓴 "한"은 코드 포인트가 3개라서, 먼저 세면 짧은 이름이 거절된다.
+  const name = typeof body.name === "string" ? body.name.trim().normalize("NFC") : "";
+  if (name === "") {
+    return c.json({ error: { code: "NAME_EMPTY" } }, 400);
+  }
+  if ([...name].length > MAX_NAME_LENGTH) {
+    return c.json({ error: { code: "NAME_TOO_LONG" } }, 400);
+  }
+
+  // 화면에는 사용자가 쓴 대소문자 그대로 보여 주고, 중복 비교용 이름만 소문자로 맞춘다.
+  const respondent = { id: randomBase64Url(16), name };
+  const editToken = newEditToken();
+  const now = new Date().toISOString();
+
+  try {
+    // 인원 수를 따로 세고 넣으면 동시에 들어온 두 요청이 둘 다 통과할 수 있다.
+    // 그래서 "30명 미만일 때만 넣는다"를 한 번의 SQL로 처리하고, 들어간 행이 없으면 가득 찬 것으로 본다.
+    const result = await c.env.DB.prepare(
+      `INSERT INTO respondents (id, poll_id, display_name, normalized_name, token_hash, created_at, updated_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?
+       WHERE (SELECT COUNT(*) FROM respondents WHERE poll_id = ?) < ?`,
+    )
+      .bind(
+        respondent.id,
+        c.req.param("id"),
+        name,
+        name.toLowerCase(),
+        await sha256Hex(editToken),
+        now,
+        now,
+        c.req.param("id"),
+        MAX_RESPONDENTS,
+      )
+      .run();
+    if (result.meta.changes === 0) {
+      return c.json({ error: { code: "POLL_FULL" } }, 409);
+    }
+  } catch (error) {
+    // 같은 이름이 거의 동시에 들어오는 경우까지 막으려고, 미리 조회하지 않고 DB의 유일성 제약에 맡긴다.
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      return c.json({ error: { code: "NAME_TAKEN" } }, 409);
+    }
+    throw error;
+  }
+
+  return c.json({ respondent, editToken }, 201);
 });
 
 export default app;

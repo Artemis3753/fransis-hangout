@@ -14,6 +14,6 @@
 - [x] Every user-facing string (including the page title and error messages) comes from a Korean translation file keyed by locale; no literal user-facing text appears in the screens
 - [x] API errors are returned as stable machine-readable codes; the frontend maps each code to a Korean message
 - [x] Responses signal "do not index" and the site disallows crawling
-- [ ] API tests run against a real local D1 database, starting clean for each test, and cover every creation rule above (tests run against a real local D1 and cover every creation rule; a clean database per test relies on the plugin's per-test isolation and is not yet proven by a test - ticket 02's name-uniqueness tests will exercise it)
+- [x] API tests run against a real local D1 database, starting clean for each test, and cover every creation rule above (the plugin's per-test isolation turned out not to hold, so the test setup clears every table before each test; a harness test proves it, added in ticket 02)
 - [x] The site is deployed to the default Cloudflare address and the poll link works there; the organizer key is a deployment secret, not committed to the repository
 - [x] The README states in English how to run the site and the tests locally and how it is deployed
