@@ -6,6 +6,8 @@ The site is the source of truth. KakaoTalk is only used to hand the link around;
 
 Specs and tickets live in `.scratch/date-poll/`.
 
+The workflow skills under `.claude/skills/` are modified copies of [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, see `.claude/skills/LICENSE-mattpocock-skills.txt`).
+
 ## Stack
 
 - Cloudflare Workers with static assets (one deployment serves the pages and the API)
