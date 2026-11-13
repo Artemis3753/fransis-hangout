@@ -1,6 +1,6 @@
 # Real-phone check (ticket 08)
 
-**Status: PARTLY DONE (2026-11-13).** Steps A, B, B3, C and E were reported fine by the organizer on a real phone. Step D (default browser plus the edit link) and the B2 detail (copy button versus long-press) were not reported separately, so they are still open. Fields left blank in Results were not recorded; nothing here claims more than was reported.
+**Status: DONE (2026-11-13).** The organizer reported every step (A, B, B2, B3, C, D, E) fine on a real phone. Only the card in step A was seen in a screenshot; the other steps are the organizer's own report, with no detail recorded. Phone model, OS and KakaoTalk version were not recorded.
 
 The calendar screen has no automated tests, so this hand check is the only proof that tapping, saving, the edit link and the results view work on a phone and inside KakaoTalk. It also answers one open question: **does KakaoTalk's in-app browser keep a respondent's stored data after the link is closed and reopened?** (The edit link makes the design safe either way, but the answer decides how often people will need it.)
 
@@ -36,9 +36,9 @@ The response holds the poll `id`; the link is `https://fransis-hangout.yd30421.w
 - Default browser used: not recorded
 - A. Preview card shown? **Card shown.** Title "Phone test", the Korean description (cut off with "…" after the first line and a half), and the bare domain as the link; no image (none is set). Seen in a screenshot of the "chat with me" on 2026-11-13. `robots.txt` still says `Disallow: /` on production, so at least for this poll KakaoTalk's scraper did not obey it and `kakaotalk-scrap` does not need to be allowed. (One poll, one phone; not a guarantee for every KakaoTalk version.)
 - B. Join, tap, save in the in-app browser: fine, as reported by the organizer.
-- B2. Copy button / long-press fallback: not reported separately. Open.
+- B2. Copy button / long-press fallback: fine, as reported by the organizer (which of the two was used was not recorded).
 - B3. Results view: fine, as reported by the organizer.
 - C. In-app browser kept stored data after closing and reopening? **Reported fine** (the organizer's "all fine" answer to this question; the exact screen was not described).
-- D. Default browser: name form shown? Edit link restored access? Not reported. Open.
+- D. Default browser: name form shown? Edit link restored access? Fine, as reported by the organizer.
 - E. Layout problems: none reported.
 - Defects found (fix here or open a new ticket under `.scratch/date-poll/issues/`): none reported.
