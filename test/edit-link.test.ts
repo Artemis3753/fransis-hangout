@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPollId, joinAs, readAnswers, readRespondent, saveAnswers } from "./helpers";
+import { closePoll, createPollId, joinAs, readAnswers, readRespondent, saveAnswers } from "./helpers";
 
 // 개인 수정 링크는 "응답자 id + 수정 토큰"을 담은 주소다. 다른 기기에서 링크를 열면 화면은 이 둘만 가지고
 // 서버에 본인 확인을 하므로, 아래 테스트는 그 두 값만으로 무엇이 되고 안 되는지를 확인한다.
@@ -23,6 +23,21 @@ describe("개인 수정 링크로 접근 복원", () => {
     expect(edited.status).toBe(200);
     expect(await (await readAnswers(pollId, respondentId, token)).json()).toEqual({
       answers: { "2026-12-06": "available" },
+    });
+  });
+
+  it("마감된 조사에서도 링크로 본인 확인이 되고 내 응답이 읽힌다(읽기는 막지 않는다)", async () => {
+    const pollId = await createPollId();
+    const { respondentId, token } = await joinAs(pollId, "민지");
+    await saveAnswers(pollId, respondentId, token, { answers: { "2026-12-05": "preferred" } });
+    await closePoll(pollId);
+
+    const who = await readRespondent(pollId, respondentId, token);
+
+    expect(who.status).toBe(200);
+    expect(await who.json()).toEqual({ respondent: { id: respondentId, name: "민지" } });
+    expect(await (await readAnswers(pollId, respondentId, token)).json()).toEqual({
+      answers: { "2026-12-05": "preferred" },
     });
   });
 

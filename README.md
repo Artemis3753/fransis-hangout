@@ -16,7 +16,7 @@ The workflow skills under `.claude/skills/` are modified copies of [mattpocock/s
 - Vite for the static frontend (no UI framework yet)
 - Vitest with `@cloudflare/vitest-plugin` for API tests against a real local D1
 
-The UI is Korean. Every user-facing string lives in `web/i18n/`, so another language is a new file with the same shape as `ko.ts`.
+The UI is Korean. Every user-facing sentence lives in `web/i18n/`, so another language is a new file with the same shape as `ko.ts`. (The status symbols ★ ○ ✕ are not language text and live in `web/calendar.ts`.)
 
 ## Requirements
 

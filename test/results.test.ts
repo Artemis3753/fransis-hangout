@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPollId, joinAs, readResults, saveAnswers } from "./helpers";
+import { closePoll, createPollId, joinAs, readResults, saveAnswers } from "./helpers";
 
 type Availability = "preferred" | "available" | "unavailable";
 type DayResult = {
@@ -38,7 +38,12 @@ describe("결과: 날짜별 집계", () => {
     expect(r.days).toHaveLength(62);
     expect(r.days[0].date).toBe("2026-12-01");
     expect(r.days[61].date).toBe("2027-01-31");
-    expect(r.days.every((d) => d.unanswered === 2 && !d.unanimous)).toBe(true);
+    // 응답이 없는 것은 "불가능"이 아니다. 침묵을 불가능으로 세면 이 단언이 깨진다.
+    expect(
+      r.days.every(
+        (d) => d.unanswered === 2 && !d.unanimous && d.preferred.length + d.available.length + d.unavailable.length === 0,
+      ),
+    ).toBe(true);
     expect(r.ranking).toEqual([]);
   });
 
@@ -110,6 +115,17 @@ describe("결과: 날짜별 집계", () => {
 
     expect(r.respondentCount).toBe(1);
     expect(dayOf(r, "2026-12-05").preferred).toEqual([]);
+  });
+
+  it("마감된 조사의 결과도 그대로 읽힌다", async () => {
+    const pollId = await createPollId();
+    await populate(pollId, [["민지", { "2026-12-05": "preferred" }]]);
+    await closePoll(pollId);
+
+    const r = await results(pollId);
+
+    expect(dayOf(r, "2026-12-05").preferred).toEqual(["민지"]);
+    expect(r.ranking).toEqual(["2026-12-05"]);
   });
 
   it("링크만 알면 토큰 없이 읽을 수 있고, 없는 조사는 POLL_NOT_FOUND다", async () => {

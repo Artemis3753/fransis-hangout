@@ -229,14 +229,20 @@ function showPoll(poll: Poll, notice?: string) {
 async function restoreFromEditLink(pollId: string): Promise<string | undefined> {
   const link = parseEditHash(location.hash);
   if (link === null) return undefined;
-  // 처리가 끝나면 비밀이 주소창과 방문 기록에 남지 않도록 주소에서 지운다. 맞는 링크는 이미 기기에 저장된다.
-  history.replaceState(null, "", location.pathname + location.search);
-  if (link === "malformed") return m.editLink.invalid;
+  // 결론이 난 링크(맞음·틀림·깨짐)는 비밀이 주소창과 방문 기록에 남지 않도록 주소에서 지운다. 맞는 링크는 이미 기기에 저장된다.
+  const clearAddress = () => history.replaceState(null, "", location.pathname + location.search);
+  if (link === "malformed") {
+    clearAddress();
+    return m.editLink.invalid;
+  }
 
   const result = await fetchRespondent(pollId, link.respondentId, link.editToken);
-  if (!result.ok) {
-    return result.code === "EDIT_TOKEN_INVALID" ? m.editLink.invalid : errorMessage(result.code);
+  if (!result.ok && result.code !== "EDIT_TOKEN_INVALID") {
+    // 네트워크 같은 일시적 실패는 링크가 틀렸다는 뜻이 아니다. 주소에 남겨 두면 새로고침으로 다시 시도할 수 있다.
+    return errorMessage(result.code);
   }
+  clearAddress();
+  if (!result.ok) return m.editLink.invalid;
   saveRespondent(pollId, { id: result.value.id, name: result.value.name, editToken: link.editToken });
   return undefined;
 }

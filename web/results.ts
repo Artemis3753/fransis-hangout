@@ -2,7 +2,7 @@ import type { DayResult, Results } from "./api";
 import { buildMonths, node, SYMBOL, toIso, weekdayOf } from "./calendar";
 import { format, messages as m } from "./i18n";
 
-// 추천 날짜는 몇 개만 보여 준다. 62일 전체를 순위로 늘어놓으면 "가장 좋은 날"이 묻힌다.
+// 추천 날짜는 몇 개만 보여 준다. 조사 기간(최대 92일) 전체를 순위로 늘어놓으면 "가장 좋은 날"이 묻힌다.
 const BEST_DAY_COUNT = 5;
 
 const countOf = (day: DayResult) => ({

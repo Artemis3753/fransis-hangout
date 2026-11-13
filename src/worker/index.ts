@@ -286,7 +286,9 @@ app.put("/api/polls/:id/respondents/:respondentId/answers", async (c) => {
   }
 
   // 삭제와 삽입을 한 번의 batch(트랜잭션)로 묶어서, 중간에 실패해도 이전 응답이 그대로 남게 한다.
+  // 수정 시각(updated_at)도 같은 묶음에서 갱신해서, 응답은 바뀌었는데 시각만 옛날인 상태가 생기지 않게 한다.
   await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE respondents SET updated_at = ? WHERE id = ?").bind(new Date().toISOString(), respondentId),
     c.env.DB.prepare("DELETE FROM answers WHERE respondent_id = ?").bind(respondentId),
     ...parsed.entries.map(([date, state]) =>
       c.env.DB.prepare("INSERT INTO answers (respondent_id, date, state) VALUES (?, ?, ?)").bind(respondentId, date, state),

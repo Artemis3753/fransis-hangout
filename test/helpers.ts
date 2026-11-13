@@ -27,6 +27,14 @@ export async function createPollId(): Promise<string> {
   return poll.id;
 }
 
+/**
+ * 조사를 마감 상태로 만든다. 마감 API는 티켓 06에서 생기므로 지금은 상황 설정을 위해서만 DB를 직접 바꾼다.
+ * 06이 끝나면 이 도우미 안을 마감 API 호출로 바꾼다(테스트들은 이 함수만 부르므로 한 곳만 고치면 된다).
+ */
+export async function closePoll(pollId: string) {
+  await env.DB.prepare("UPDATE polls SET status = 'closed' WHERE id = ?").bind(pollId).run();
+}
+
 /** 조사에 이름으로 참여한다. */
 export function joinPoll(pollId: string, name: unknown) {
   return api(`/api/polls/${pollId}/respondents`, {

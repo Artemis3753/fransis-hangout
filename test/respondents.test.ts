@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { api, createPollId, joinPoll } from "./helpers";
+import { api, closePoll, createPollId, joinPoll } from "./helpers";
 
 describe("이름으로 참여하기", () => {
   it("이름만 보내면(로그인·키 없이) 응답자가 만들어지고 수정 토큰이 돌아온다", async () => {
@@ -111,8 +111,7 @@ describe("이름으로 참여하기", () => {
 
   it("마감된 조사에는 POLL_CLOSED로 거절한다", async () => {
     const pollId = await createPollId();
-    // 마감 기능은 06번 티켓에서 만든다. 지금은 상황 설정을 위해서만 DB 상태를 직접 바꾼다.
-    await env.DB.prepare("UPDATE polls SET status = 'closed' WHERE id = ?").bind(pollId).run();
+    await closePoll(pollId);
 
     const res = await joinPoll(pollId, "민지");
 

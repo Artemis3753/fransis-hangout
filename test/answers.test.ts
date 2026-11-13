@@ -1,6 +1,5 @@
-import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { createPollId, joinAs, readAnswers, saveAnswers } from "./helpers";
+import { closePoll, createPollId, joinAs, readAnswers, saveAnswers } from "./helpers";
 
 describe("내 응답 저장하고 읽기", () => {
   it("날짜별 상태를 저장하면 같은 내용을 다시 읽을 수 있다", async () => {
@@ -136,8 +135,7 @@ describe("내 응답 저장하고 읽기", () => {
     const pollId = await createPollId();
     const { respondentId, token } = await joinAs(pollId);
     await saveAnswers(pollId, respondentId, token, { answers: { "2026-12-05": "preferred" } });
-    // 마감 기능은 06번 티켓에서 만든다. 지금은 상황 설정을 위해서만 DB 상태를 직접 바꾼다.
-    await env.DB.prepare("UPDATE polls SET status = 'closed' WHERE id = ?").bind(pollId).run();
+    await closePoll(pollId);
 
     const write = await saveAnswers(pollId, respondentId, token, { answers: { "2026-12-05": "unavailable" } });
     expect(write.status).toBe(409);
