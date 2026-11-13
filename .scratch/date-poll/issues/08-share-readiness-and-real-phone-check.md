@@ -18,7 +18,7 @@
 ## Notes (implementation)
 
 - The scraper behind KakaoTalk previews reads the HTML the server sends and does not run scripts, so the Worker now injects the poll title, description (from `web/i18n/ko.ts`) and `og:` tags into `/p/<id>` itself (`wrangler.jsonc` sends `/p/*` through the Worker first). Poll titles are HTML-escaped. Tested at the API seam in `test/share-page.test.ts`.
-- Criterion 1 is checked for "the information is present in the served HTML". Whether KakaoTalk actually shows a card is part of step A of `docs/phone-check.md` and is **not verified**. There is no `og:image`; the card is text only.
-- `robots.txt` still says `Disallow: /`. Whether KakaoTalk's scraper obeys it is unknown (no official statement found). If step A shows no card, allow the `kakaotalk-scrap` user agent in `robots.txt`.
+- Criterion 1 is checked for "the information is present in the served HTML". Whether KakaoTalk actually shows a card was checked in step A of `docs/phone-check.md` (see the phone-check note below). There is no `og:image`; the card is text only.
+- `robots.txt` still says `Disallow: /`. Kakao has no official statement on whether its scraper obeys it; in practice the card appeared anyway (see below), so no change is needed.
 - Phone check on 2026-11-13: the KakaoTalk preview card appeared (title, description, domain; no image) even though `robots.txt` says `Disallow: /`, so the scraper did not obey it for this poll and `kakaotalk-scrap` stays disallowed. All steps, including D, were reported fine; details are in `docs/phone-check.md`.
 - Production re-check after the deploy (2026-11-13): og tags are in the served HTML of a real poll page, `x-robots-tag: noindex, nofollow` is still sent, `robots.txt` is unchanged.
