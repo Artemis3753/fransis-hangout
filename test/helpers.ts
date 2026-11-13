@@ -58,6 +58,11 @@ export function saveAnswers(pollId: string, respondentId: string, token: string 
   });
 }
 
+/** 수정 링크로 열었을 때 "이 사람이 누구인지" 확인한다. 토큰이 맞아야만 이름을 돌려준다. */
+export function readRespondent(pollId: string, respondentId: string, token: string | null) {
+  return api(`/api/polls/${pollId}/respondents/${respondentId}`, { headers: withToken(token) });
+}
+
 /** 조사의 결과(날짜별 집계와 순위)를 읽는다. 링크만 알면 되므로 토큰이 없다. */
 export function readResults(pollId: string) {
   return api(`/api/polls/${pollId}/results`);

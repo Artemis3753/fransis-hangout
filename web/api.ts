@@ -49,6 +49,19 @@ export type Availability = "preferred" | "available" | "unavailable";
 /** 날짜("YYYY-MM-DD")별 상태. 키가 없는 날은 "응답 없음"이다. */
 export type Answers = Record<string, Availability>;
 
+/** 수정 링크의 id와 토큰이 맞는지 서버에 확인하고, 인사에 쓸 이름을 받는다. */
+export function fetchRespondent(
+  pollId: string,
+  respondentId: string,
+  editToken: string,
+): Promise<Result<{ id: string; name: string }>> {
+  return callApi(
+    `/api/polls/${encodeURIComponent(pollId)}/respondents/${encodeURIComponent(respondentId)}`,
+    { headers: { authorization: `Bearer ${editToken}` } },
+    (body) => body.respondent as { id: string; name: string },
+  );
+}
+
 /** 하루치 집계. 사람 수는 이름 배열의 길이다. */
 export type DayResult = {
   date: string;

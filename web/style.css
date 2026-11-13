@@ -437,3 +437,48 @@ button.day:focus-visible {
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+/* ---- 개인 수정 링크 ---- */
+.edit-link {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.edit-link h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.edit-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+/* 16px 이상이어야 iOS Safari가 포커스 때 화면을 확대하지 않는다. */
+.edit-link-row input {
+  min-height: 2.75rem;
+  min-width: 0;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 1rem;
+}
+
+.edit-link-row button {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}

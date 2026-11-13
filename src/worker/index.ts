@@ -244,6 +244,22 @@ function parseAnswers(
   return { ok: true, entries: entries as [string, string][] };
 }
 
+// 개인 수정 링크로 열었을 때 "이 링크가 누구 것인지"를 알려 준다. 링크에는 응답자 id와 토큰만 들어 있어서
+// 화면이 인사에 쓸 이름을 여기서 얻는다. 토큰이 맞아야만 답하고, 토큰은 돌려주지 않는다.
+// 없는 조사·없는 응답자·틀린 토큰은 모두 같은 401이라서, 이 주소로 응답자가 존재하는지 알아낼 수 없다.
+// 조사가 마감돼도 읽기이므로 막지 않는다. 응답자를 지우면(티켓 06) 이 행이 사라져 링크도 함께 무효가 된다.
+app.get("/api/polls/:id/respondents/:respondentId", async (c) => {
+  const respondentId = c.req.param("respondentId");
+  if (!(await isRespondentToken(c.env.DB, c.req.param("id"), respondentId, c.req.header("authorization")))) {
+    return c.json(editTokenInvalid, 401);
+  }
+
+  const row = (await c.env.DB.prepare("SELECT display_name FROM respondents WHERE id = ?")
+    .bind(respondentId)
+    .first<{ display_name: string }>())!;
+  return c.json({ respondent: { id: respondentId, name: row.display_name } });
+});
+
 // 내 응답 전체를 교체한다. 토큰 확인, 마감 확인, 입력 검증을 모두 통과해야 저장한다.
 app.put("/api/polls/:id/respondents/:respondentId/answers", async (c) => {
   const respondentId = c.req.param("respondentId");

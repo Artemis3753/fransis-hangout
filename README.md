@@ -53,6 +53,8 @@ Friends join a poll by name, with no login: they open `/p/<id>` and type a name 
 
 After joining, a friend marks each candidate day as preferred (★), available (○) or unavailable (✕) by tapping it (a day left untouched is "no answer", never "unavailable") and saves. Saving replaces all of that person's previous answers in one transaction, and only the holder of the edit token that was issued at join time can change them. The token travels in an `Authorization: Bearer` header, never in the URL.
 
+After the first save, the page shows the respondent's personal edit link (`/p/<id>#edit=<respondent id>.<edit token>`) with a copy button. Opening it in any browser restores edit access to that respondent's answers only. The token sits after the `#`, which browsers never send to the server or in the Referer header, and the page removes it from the address bar once handled. Anyone holding the link can change that person's answers, so the page tells people to keep it private. A wrong or truncated link shows an error and changes nothing.
+
 Anyone with the link can read the results (`GET /api/polls/<id>/results`, no token): per day, the names who chose preferred, available or unavailable and how many have not answered, plus "M of N answered" and a ranking of candidate days. The ranking orders days by fewest unavailable, then most preferred, then most available, then earliest date. A day nobody answered is never ranked. A day is flagged unanimous when at least one person answered it and everyone who did chose preferred or available. The page loads results when it opens (no live updates) and reloads them right after you join or save.
 
 ## Test

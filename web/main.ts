@@ -1,7 +1,8 @@
 import "./style.css";
-import { fetchAnswers, fetchPoll, fetchResults, joinPoll, saveAnswers, type Answers, type Poll } from "./api";
+import { fetchAnswers, fetchPoll, fetchRespondent, fetchResults, joinPoll, saveAnswers, type Answers, type Poll } from "./api";
 import { buildCalendar } from "./calendar";
 import { errorMessage, format, messages as m } from "./i18n";
+import { buildEditLink, parseEditHash } from "./editLink";
 import { buildResults } from "./results";
 import { loadRespondent, saveRespondent, type StoredRespondent } from "./storage";
 
@@ -76,6 +77,42 @@ function buildJoinForm(poll: Poll, onJoined: () => void): HTMLFormElement {
   return form;
 }
 
+// 개인 수정 링크와 복사 버튼. 링크는 읽기 전용 입력칸에도 보여 준다. 앱 안 브라우저처럼 클립보드가 막힌 곳에서도
+// 길게 눌러 직접 복사할 수 있게 하려는 것이다.
+function buildEditLinkBox(link: string): HTMLElement {
+  const box = el("section", undefined, "edit-link");
+
+  const input = el("input");
+  input.readOnly = true;
+  input.value = link;
+  input.setAttribute("aria-label", m.editLink.heading);
+  // 탭하면 전체가 선택돼서 바로 복사할 수 있다.
+  input.addEventListener("focus", () => input.select());
+
+  const button = el("button", m.editLink.copy);
+  button.type = "button";
+
+  const status = el("p", undefined, "status");
+  status.setAttribute("role", "status");
+
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      status.className = "status ok";
+      status.textContent = m.editLink.copied;
+    } catch {
+      input.select();
+      status.className = "status error";
+      status.textContent = m.editLink.copyFailed;
+    }
+  });
+
+  const row = el("div", undefined, "edit-link-row");
+  row.append(input, button);
+  box.append(el("h3", m.editLink.heading), el("p", m.editLink.body, "muted small"), row, status);
+  return box;
+}
+
 // 참여한 사람에게 보여 주는 화면: 인사, 달력, 저장 버튼. 마감된 조사는 달력을 읽기 전용으로 보여 준다.
 async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTMLElement, onSaved: () => void) {
   const greeting = el("p", format(m.join.joined, { name: who.name }), "joined");
@@ -108,6 +145,11 @@ async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTM
 
   const parts: HTMLElement[] = [greeting, el("p", m.calendar.hint, "muted"), calendar];
 
+  // 수정 링크는 "한 번이라도 저장한 사람"에게만 의미가 있다. 이미 저장한 응답이 있으면 처음부터, 없으면 첫 저장 직후에 보인다.
+  const editLinkSlot = el("div");
+  const showEditLink = () => editLinkSlot.replaceChildren(buildEditLinkBox(buildEditLink(poll.id, who.id, who.editToken)));
+  if (!closed && Object.keys(answers).length > 0) showEditLink();
+
   if (closed) {
     parts.push(el("p", m.answers.closedNote, "muted"));
   } else {
@@ -121,12 +163,15 @@ async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTM
       const result = await saveAnswers(poll.id, who.id, who.editToken, answers);
       status.className = result.ok ? "status ok" : "status error";
       status.textContent = result.ok ? m.answers.saved : errorMessage(result.code);
-      if (result.ok) onSaved();
+      if (result.ok) {
+        showEditLink();
+        onSaved();
+      }
 
       button.disabled = false;
       button.textContent = m.answers.save;
     });
-    parts.push(button, status);
+    parts.push(button, status, editLinkSlot);
   }
 
   container.replaceChildren(...parts);
@@ -139,13 +184,14 @@ function renderParticipation(poll: Poll, container: HTMLElement, onChanged: () =
   if (stored) {
     void renderAnswering(poll, stored, container, onChanged);
   } else if (poll.status === "closed") {
-    container.replaceChildren(el("p", m.poll.closed, "muted"));
+    container.replaceChildren(el("p", m.poll.closed, "muted"), el("p", m.editLink.unrecognizedClosed, "muted"));
   } else {
     container.replaceChildren(
       buildJoinForm(poll, () => {
         renderParticipation(poll, container, onChanged);
         onChanged();
       }),
+      el("p", m.editLink.unrecognized, "muted small"),
     );
   }
 }
@@ -162,7 +208,7 @@ async function renderResults(poll: Poll, container: HTMLElement) {
   );
 }
 
-function showPoll(poll: Poll) {
+function showPoll(poll: Poll, notice?: string) {
   const period = el("p", undefined, "period");
   period.append(
     el("span", m.poll.periodLabel, "period-label"),
@@ -174,7 +220,25 @@ function showPoll(poll: Poll) {
   renderParticipation(poll, participation, () => void renderResults(poll, results));
   void renderResults(poll, results);
 
-  show(el("h1", poll.title), period, participation, results);
+  // 수정 링크 처리 결과(잘못된 링크)는 이름 입력 폼 위에 오류로 보여 준다.
+  show(el("h1", poll.title), period, ...(notice ? [el("p", notice, "error")] : []), participation, results);
+}
+
+// 주소에 개인 수정 링크(#edit=...)가 있으면 서버로 확인하고, 맞으면 이 브라우저에 기억시킨다.
+// 틀린 링크는 아무것도 바꾸지 않는다(이미 기억된 참여 기록도 그대로 둔다). 돌려주는 값은 화면에 띄울 오류 문구다.
+async function restoreFromEditLink(pollId: string): Promise<string | undefined> {
+  const link = parseEditHash(location.hash);
+  if (link === null) return undefined;
+  // 처리가 끝나면 비밀이 주소창과 방문 기록에 남지 않도록 주소에서 지운다. 맞는 링크는 이미 기기에 저장된다.
+  history.replaceState(null, "", location.pathname + location.search);
+  if (link === "malformed") return m.editLink.invalid;
+
+  const result = await fetchRespondent(pollId, link.respondentId, link.editToken);
+  if (!result.ok) {
+    return result.code === "EDIT_TOKEN_INVALID" ? m.editLink.invalid : errorMessage(result.code);
+  }
+  saveRespondent(pollId, { id: result.value.id, name: result.value.name, editToken: link.editToken });
+  return undefined;
 }
 
 async function main() {
@@ -202,7 +266,7 @@ async function main() {
 
   if (result.ok) {
     document.title = `${result.value.title} · ${m.app.title}`;
-    showPoll(result.value);
+    showPoll(result.value, await restoreFromEditLink(result.value.id));
   } else if (result.code === "POLL_NOT_FOUND") {
     showMessage(m.notFound.heading, m.notFound.body);
   } else {
