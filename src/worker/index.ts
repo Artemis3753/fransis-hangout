@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
+import { ko } from "../../web/i18n/ko";
 
 const app = new Hono<{ Bindings: Cloudflare.Env }>();
 
@@ -73,11 +75,41 @@ function toDayNumber(value: unknown): number | null {
   return ms / 86_400_000;
 }
 
-app.post("/api/polls", async (c) => {
+// 주최자 전용 요청은 핸들러보다 먼저 키를 확인한다. 키가 틀리면 조사나 응답자가 있는지도 알려 주지 않으려고
+// (없는 조사에 틀린 키를 보내도 404가 아니라 401) 존재 확인보다 앞에 둔다.
+const organizerOnly = createMiddleware<{ Bindings: Cloudflare.Env }>(async (c, next) => {
   if (!(await isOrganizerKeyValid(c.req.header("authorization"), c.env.ORGANIZER_KEY))) {
     return c.json({ error: { code: "ORGANIZER_KEY_INVALID" } }, 401);
   }
+  await next();
+});
 
+type PollRow = {
+  id: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  status: "open" | "closed";
+  confirmed_start_date: string | null;
+  confirmed_end_date: string | null;
+};
+
+const POLL_COLUMNS = "id, title, start_date, end_date, status, confirmed_start_date, confirmed_end_date";
+
+// DB 행(snake_case)을 API가 돌려주는 모양으로 바꾼다. 조사를 돌려주는 모든 응답이 이 한 곳을 지난다.
+function toPoll(row: PollRow) {
+  return {
+    id: row.id,
+    title: row.title,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    status: row.status,
+    confirmedStartDate: row.confirmed_start_date,
+    confirmedEndDate: row.confirmed_end_date,
+  };
+}
+
+app.post("/api/polls", organizerOnly, async (c) => {
   const input = await readJsonObject(c.req.raw);
   if (input === null) {
     return c.json({ error: { code: "INVALID_REQUEST" } }, 400);
@@ -108,9 +140,8 @@ app.post("/api/polls", async (c) => {
   const poll = {
     id: newPollId(),
     title,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    status: "open" as const,
+    startDate: input.startDate as string,
+    endDate: input.endDate as string,
   };
 
   await c.env.DB.prepare(
@@ -119,7 +150,20 @@ app.post("/api/polls", async (c) => {
     .bind(poll.id, poll.title, poll.startDate, poll.endDate, new Date().toISOString())
     .run();
 
-  return c.json({ poll }, 201);
+  return c.json(
+    {
+      poll: toPoll({
+        id: poll.id,
+        title: poll.title,
+        start_date: poll.startDate,
+        end_date: poll.endDate,
+        status: "open",
+        confirmed_start_date: null,
+        confirmed_end_date: null,
+      }),
+    },
+    201,
+  );
 });
 
 // 정의되지 않은 경로도 Hono 기본값(일반 텍스트)이 아니라 다른 오류와 같은 코드 모양으로 답한다.
@@ -127,18 +171,104 @@ app.notFound((c) => c.json({ error: { code: "NOT_FOUND" } }, 404));
 
 // 링크(공개 id)를 아는 사람은 누구나 읽을 수 있다. 주최자 키는 필요 없다.
 app.get("/api/polls/:id", async (c) => {
-  const row = await c.env.DB.prepare(
-    "SELECT id, title, start_date, end_date, status FROM polls WHERE id = ?",
-  )
+  const row = await c.env.DB.prepare(`SELECT ${POLL_COLUMNS} FROM polls WHERE id = ?`)
     .bind(c.req.param("id"))
-    .first<{ id: string; title: string; start_date: string; end_date: string; status: "open" | "closed" }>();
+    .first<PollRow>();
 
   if (row === null) {
     return c.json({ error: { code: "POLL_NOT_FOUND" } }, 404);
   }
-  return c.json({
-    poll: { id: row.id, title: row.title, startDate: row.start_date, endDate: row.end_date, status: row.status },
-  });
+  return c.json({ poll: toPoll(row) });
+});
+
+// 본문이 아예 없으면 빈 객체로 본다(확정 날짜 없이 마감). 본문이 있는데 JSON 객체가 아니면 null이다.
+async function readOptionalJsonObject(request: Request): Promise<Record<string, unknown> | null> {
+  const text = await request.text();
+  if (text.trim() === "") return {};
+  try {
+    const body: unknown = JSON.parse(text);
+    return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+// 조사를 마감한다. 확정 날짜는 시작과 끝을 함께 주거나 둘 다 생략한다. 이미 마감된 조사에 다시 호출하면
+// 확정 날짜를 바꾸는 동작이 된다(마감 상태는 그대로).
+app.post("/api/polls/:id/close", organizerOnly, async (c) => {
+  const pollId = c.req.param("id");
+  const poll = await c.env.DB.prepare("SELECT start_date, end_date FROM polls WHERE id = ?")
+    .bind(pollId)
+    .first<{ start_date: string; end_date: string }>();
+  if (poll === null) {
+    return c.json({ error: { code: "POLL_NOT_FOUND" } }, 404);
+  }
+
+  const body = await readOptionalJsonObject(c.req.raw);
+  if (body === null) {
+    return c.json({ error: { code: "INVALID_REQUEST" } }, 400);
+  }
+
+  let confirmedStart: string | null = null;
+  let confirmedEnd: string | null = null;
+  const hasStart = body.confirmedStartDate !== undefined && body.confirmedStartDate !== null;
+  const hasEnd = body.confirmedEndDate !== undefined && body.confirmedEndDate !== null;
+  if (hasStart !== hasEnd) {
+    return c.json({ error: { code: "INVALID_REQUEST" } }, 400);
+  }
+  if (hasStart && hasEnd) {
+    const startDay = toDayNumber(body.confirmedStartDate);
+    const endDay = toDayNumber(body.confirmedEndDate);
+    if (startDay === null || endDay === null) {
+      return c.json({ error: { code: "INVALID_DATE" } }, 400);
+    }
+    if (endDay < startDay) {
+      return c.json({ error: { code: "END_BEFORE_START" } }, 400);
+    }
+    if (startDay < toDayNumber(poll.start_date)! || endDay > toDayNumber(poll.end_date)!) {
+      return c.json({ error: { code: "CONFIRMED_OUT_OF_RANGE" } }, 400);
+    }
+    confirmedStart = body.confirmedStartDate as string;
+    confirmedEnd = body.confirmedEndDate as string;
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE polls SET status = 'closed', confirmed_start_date = ?, confirmed_end_date = ? WHERE id = ?",
+  )
+    .bind(confirmedStart, confirmedEnd, pollId)
+    .run();
+
+  const row = (await c.env.DB.prepare(`SELECT ${POLL_COLUMNS} FROM polls WHERE id = ?`).bind(pollId).first<PollRow>())!;
+  return c.json({ poll: toPoll(row) });
+});
+
+// 마감을 되돌린다. 확정 날짜는 지운다: 다시 연 조사는 "아직 결정 전"이라서, 옛 확정 날짜가 맨 위에 남으면 오해를 부른다.
+app.post("/api/polls/:id/reopen", organizerOnly, async (c) => {
+  const pollId = c.req.param("id");
+  const result = await c.env.DB.prepare(
+    "UPDATE polls SET status = 'open', confirmed_start_date = NULL, confirmed_end_date = NULL WHERE id = ?",
+  )
+    .bind(pollId)
+    .run();
+  if (result.meta.changes === 0) {
+    return c.json({ error: { code: "POLL_NOT_FOUND" } }, 404);
+  }
+
+  const row = (await c.env.DB.prepare(`SELECT ${POLL_COLUMNS} FROM polls WHERE id = ?`).bind(pollId).first<PollRow>())!;
+  return c.json({ poll: toPoll(row) });
+});
+
+// 응답자를 지운다. 그 사람의 응답은 answers의 외래키(ON DELETE CASCADE)로 함께 사라지고, 수정 토큰의 해시도
+// 이 행에 있어서 개인 수정 링크도 같이 무효가 된다. 이름도 다시 쓸 수 있다(유일성은 이 행에 걸려 있다).
+// 다른 조사의 응답자 id를 주면 지워지지 않도록 poll_id도 함께 조건에 건다.
+app.delete("/api/polls/:id/respondents/:respondentId", organizerOnly, async (c) => {
+  const result = await c.env.DB.prepare("DELETE FROM respondents WHERE id = ? AND poll_id = ?")
+    .bind(c.req.param("respondentId"), c.req.param("id"))
+    .run();
+  if (result.meta.changes === 0) {
+    return c.json({ error: { code: "RESPONDENT_NOT_FOUND" } }, 404);
+  }
+  return c.body(null, 204);
 });
 
 // 로그인 없이 이름만으로 조사에 참여한다. 링크를 아는 사람은 누구나 할 수 있다.
@@ -310,6 +440,45 @@ app.get("/api/polls/:id/respondents/:respondentId/answers", async (c) => {
   return c.json({ answers: Object.fromEntries(results.map((row) => [row.date, row.state])) });
 });
 
+const escapeHtml = (value: string) =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+
+// 조사 페이지(/p/<id>)의 HTML에 링크 미리보기용 제목·설명 태그를 서버에서 끼워 넣는다.
+// 카카오톡의 미리보기 수집기는 스크립트를 실행하지 않고 서버가 준 HTML만 읽으므로, 화면 코드(main.ts)가 제목을
+// 채우는 것만으로는 미리보기가 비어 버린다. 조사 제목은 사용자 입력이라 HTML 이스케이프해서 넣는다.
+// 조사가 없거나 /p/<id> 모양이 아니면 정적 HTML을 그대로 돌려줘서, 화면이 "찾을 수 없음"을 안내하게 한다.
+app.get("/p/*", async (c) => {
+  const page = await c.env.ASSETS.fetch(c.req.raw);
+  const match = new URL(c.req.url).pathname.match(/^\/p\/([^/]+)\/?$/);
+  if (!match) return page;
+
+  let pollId: string;
+  try {
+    pollId = decodeURIComponent(match[1]);
+  } catch {
+    return page; // 깨진 퍼센트 인코딩. 화면이 알아서 "찾을 수 없음"을 보여 준다.
+  }
+  const poll = await c.env.DB.prepare("SELECT title FROM polls WHERE id = ?").bind(pollId).first<{ title: string }>();
+  if (poll === null) return page;
+
+  const title = escapeHtml(poll.title);
+  const pageTitle = escapeHtml(`${poll.title} · ${ko.app.title}`);
+  const url = escapeHtml(new URL(c.req.url).origin + new URL(c.req.url).pathname.replace(/\/$/, ""));
+  const tags = [
+    `<meta property="og:type" content="website">`,
+    `<meta property="og:site_name" content="${escapeHtml(ko.app.title)}">`,
+    `<meta property="og:title" content="${title}">`,
+    `<meta property="og:description" content="${escapeHtml(ko.share.description)}">`,
+    `<meta property="og:url" content="${url}">`,
+    `<meta property="og:locale" content="ko_KR">`,
+  ].join("\n    ");
+
+  return new HTMLRewriter()
+    .on("title", { element: (element) => void element.setInnerContent(pageTitle) })
+    .on("head", { element: (element) => void element.append(`\n    ${tags}\n  `, { html: true }) })
+    .transform(page);
+});
+
 const dayNumberToIso = (dayNumber: number) => new Date(dayNumber * 86_400_000).toISOString().slice(0, 10);
 
 type DayResult = {
@@ -360,7 +529,8 @@ app.get("/api/polls/:id/results", async (c) => {
        ORDER BY r.created_at, r.id`,
     ).bind(pollId),
   ]);
-  const respondentCount = respondentRows.results.length;
+  const respondents = respondentRows.results as { id: string; display_name: string }[];
+  const respondentCount = respondents.length;
   const answers = answerRows.results as { respondent_id: string; date: string; state: string; display_name: string }[];
 
   const namesByDate = new Map<string, Record<"preferred" | "available" | "unavailable", string[]>>();
@@ -389,10 +559,14 @@ app.get("/api/polls/:id/results", async (c) => {
     });
   }
 
+  const answeredIds = new Set(answers.map((row) => row.respondent_id));
   return c.json({
     results: {
       respondentCount,
-      answeredCount: new Set(answers.map((row) => row.respondent_id)).size,
+      answeredCount: answeredIds.size,
+      // 주최자가 "누구에게 재촉할지" 보고 응답자를 지우려면 이름·응답 여부·id가 필요하다. 참여 순서대로 나간다.
+      // id만으로는 응답을 읽거나 고칠 수 없다(수정 토큰이 따로 필요하고, 지우기는 주최자 키가 필요하다).
+      respondents: respondents.map((row) => ({ id: row.id, name: row.display_name, answered: answeredIds.has(row.id) })),
       days,
       ranking: rankDays(days),
     },

@@ -27,12 +27,38 @@ export async function createPollId(): Promise<string> {
   return poll.id;
 }
 
-/**
- * 조사를 마감 상태로 만든다. 마감 API는 티켓 06에서 생기므로 지금은 상황 설정을 위해서만 DB를 직접 바꾼다.
- * 06이 끝나면 이 도우미 안을 마감 API 호출로 바꾼다(테스트들은 이 함수만 부르므로 한 곳만 고치면 된다).
- */
+function organizerHeaders(key: string | null): Record<string, string> {
+  return { "content-type": "application/json", ...(key === null ? {} : { authorization: `Bearer ${key}` }) };
+}
+
+/** 조사를 마감한다(주최자). body에 confirmedStartDate·confirmedEndDate를 주면 확정 날짜를 함께 정한다. */
+export function closePollAs(pollId: string, key: string | null = env.ORGANIZER_KEY, body?: unknown) {
+  return api(`/api/polls/${pollId}/close`, {
+    method: "POST",
+    headers: organizerHeaders(key),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+/** 다른 테스트의 준비 단계용: 올바른 키로 조사를 마감하고, 실패하면 바로 알린다. */
 export async function closePoll(pollId: string) {
-  await env.DB.prepare("UPDATE polls SET status = 'closed' WHERE id = ?").bind(pollId).run();
+  const res = await closePollAs(pollId);
+  if (res.status !== 200) throw new Error(`closePoll failed: ${res.status}`);
+}
+
+/** 마감된 조사를 다시 연다(주최자). */
+export function reopenPoll(pollId: string, key: string | null = env.ORGANIZER_KEY) {
+  return api(`/api/polls/${pollId}/reopen`, { method: "POST", headers: organizerHeaders(key) });
+}
+
+/** 응답자를 지운다(주최자). 그 사람의 응답과 수정 토큰도 함께 사라진다. */
+export function removeRespondent(pollId: string, respondentId: string, key: string | null = env.ORGANIZER_KEY) {
+  return api(`/api/polls/${pollId}/respondents/${respondentId}`, { method: "DELETE", headers: organizerHeaders(key) });
+}
+
+/** 조사 정보(상태와 확정 날짜 포함)를 읽는다. */
+export function readPoll(pollId: string) {
+  return api(`/api/polls/${pollId}`);
 }
 
 /** 조사에 이름으로 참여한다. */

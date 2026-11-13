@@ -4,6 +4,9 @@ export type Poll = {
   startDate: string;
   endDate: string;
   status: "open" | "closed";
+  /** 마감할 때 주최자가 정한 확정 날짜. 없으면 둘 다 null이다. */
+  confirmedStartDate: string | null;
+  confirmedEndDate: string | null;
 };
 
 export type JoinedRespondent = {
@@ -22,6 +25,8 @@ async function callApi<T>(path: string, init: RequestInit | undefined, pick: (bo
   } catch {
     return { ok: false, code: "NETWORK" };
   }
+  // 204(본문 없음)는 성공이지만 읽을 JSON이 없다. 응답자 삭제가 이렇게 답한다.
+  if (res.status === 204) return { ok: true, value: pick(null) };
   // 서버에는 닿았지만 JSON이 아닌 응답(예: 5xx 오류 페이지)이면 연결 문제가 아니라 서버 문제다.
   const body = await res.json().catch(() => null);
   if (!res.ok) return { ok: false, code: body?.error?.code ?? "UNKNOWN" };
@@ -79,6 +84,8 @@ export type Results = {
   /** 하루라도 답한 참여자 수 */
   answeredCount: number;
   days: DayResult[];
+  /** 참여 순서대로. 주최자가 응답 여부를 보고 응답자를 지우는 데 쓴다. */
+  respondents: { id: string; name: string; answered: boolean }[];
   /** 순위가 매겨진 날짜(앞일수록 좋은 후보). 아무도 답하지 않은 날은 없다. */
   ranking: string[];
 };
@@ -115,5 +122,37 @@ export function saveAnswers(
       body: JSON.stringify({ answers }),
     },
     (body) => body.answers as Answers,
+  );
+}
+
+// ---- 주최자 전용. 키는 Authorization 헤더로만 보낸다(주소에 넣지 않는다).
+const organizerHeaders = (key: string) => ({ "content-type": "application/json", authorization: `Bearer ${key}` });
+
+/** 조사를 마감한다. range가 있으면 확정 날짜도 함께 정한다. 이미 마감된 조사에 다시 부르면 확정 날짜를 바꾼다. */
+export function closePoll(
+  pollId: string,
+  key: string,
+  range: { confirmedStartDate: string; confirmedEndDate: string } | null,
+): Promise<Result<Poll>> {
+  return callApi(
+    `/api/polls/${encodeURIComponent(pollId)}/close`,
+    { method: "POST", headers: organizerHeaders(key), body: JSON.stringify(range ?? {}) },
+    (body) => body.poll as Poll,
+  );
+}
+
+export function reopenPoll(pollId: string, key: string): Promise<Result<Poll>> {
+  return callApi(
+    `/api/polls/${encodeURIComponent(pollId)}/reopen`,
+    { method: "POST", headers: organizerHeaders(key) },
+    (body) => body.poll as Poll,
+  );
+}
+
+export function removeRespondent(pollId: string, respondentId: string, key: string): Promise<Result<null>> {
+  return callApi(
+    `/api/polls/${encodeURIComponent(pollId)}/respondents/${encodeURIComponent(respondentId)}`,
+    { method: "DELETE", headers: organizerHeaders(key) },
+    () => null,
   );
 }

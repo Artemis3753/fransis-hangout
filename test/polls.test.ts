@@ -32,7 +32,15 @@ describe("조사 읽기", () => {
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      poll: { id: created.poll.id, title: "겨울 여행", startDate: "2026-12-01", endDate: "2027-01-31", status: "open" },
+      poll: {
+        id: created.poll.id,
+        title: "겨울 여행",
+        startDate: "2026-12-01",
+        endDate: "2027-01-31",
+        status: "open",
+        confirmedStartDate: null,
+        confirmedEndDate: null,
+      },
     });
   });
 

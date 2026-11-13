@@ -28,3 +28,13 @@ export function saveRespondent(pollId: string, respondent: StoredRespondent): vo
     // 저장 실패는 조용히 넘긴다. 참여 자체는 이미 서버에 기록됐다.
   }
 }
+
+// 서버가 이 토큰을 더 이상 인정하지 않을 때(주최자가 나를 지웠을 때) 쓴다. 지우지 않으면 이 기기에서 계속
+// "참여한 사람"으로 보여서 이름 입력 폼이 나오지 않고, 다시 참여할 방법이 없어진다.
+export function clearRespondent(pollId: string): void {
+  try {
+    localStorage.removeItem(keyFor(pollId));
+  } catch {
+    // 지우지 못해도 화면은 계속 동작해야 한다.
+  }
+}

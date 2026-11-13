@@ -4,7 +4,8 @@ import { buildCalendar } from "./calendar";
 import { errorMessage, format, messages as m } from "./i18n";
 import { buildEditLink, parseEditHash } from "./editLink";
 import { buildResults } from "./results";
-import { loadRespondent, saveRespondent, type StoredRespondent } from "./storage";
+import { buildOrganizerPanel, isOrganizerView } from "./organizer";
+import { clearRespondent, loadRespondent, saveRespondent, type StoredRespondent } from "./storage";
 
 // "2026-12-01" → "2026년 12월 1일". Date 객체를 거치지 않아서 보는 사람의 시간대와 무관하다.
 function formatDate(iso: string): string {
@@ -77,19 +78,17 @@ function buildJoinForm(poll: Poll, onJoined: () => void): HTMLFormElement {
   return form;
 }
 
-// 개인 수정 링크와 복사 버튼. 링크는 읽기 전용 입력칸에도 보여 준다. 앱 안 브라우저처럼 클립보드가 막힌 곳에서도
-// 길게 눌러 직접 복사할 수 있게 하려는 것이다.
-function buildEditLinkBox(link: string): HTMLElement {
-  const box = el("section", undefined, "edit-link");
-
+// 링크를 읽기 전용 입력칸에 보여 주고 복사 버튼을 붙인다. 입력칸을 같이 두는 이유: 앱 안 브라우저처럼 클립보드가
+// 막힌 곳에서도 길게 눌러 직접 복사할 수 있게 하려는 것이다. 수정 링크와 조사 링크가 함께 쓴다.
+function buildCopyControl(link: string, ariaLabel: string): HTMLElement {
   const input = el("input");
   input.readOnly = true;
   input.value = link;
-  input.setAttribute("aria-label", m.editLink.heading);
+  input.setAttribute("aria-label", ariaLabel);
   // 탭하면 전체가 선택돼서 바로 복사할 수 있다.
   input.addEventListener("focus", () => input.select());
 
-  const button = el("button", m.editLink.copy);
+  const button = el("button", m.share.copy);
   button.type = "button";
 
   const status = el("p", undefined, "status");
@@ -99,17 +98,32 @@ function buildEditLinkBox(link: string): HTMLElement {
     try {
       await navigator.clipboard.writeText(link);
       status.className = "status ok";
-      status.textContent = m.editLink.copied;
+      status.textContent = m.share.copied;
     } catch {
       input.select();
       status.className = "status error";
-      status.textContent = m.editLink.copyFailed;
+      status.textContent = m.share.copyFailed;
     }
   });
 
   const row = el("div", undefined, "edit-link-row");
   row.append(input, button);
-  box.append(el("h3", m.editLink.heading), el("p", m.editLink.body, "muted small"), row, status);
+  const control = el("div");
+  control.append(row, status);
+  return control;
+}
+
+function buildEditLinkBox(link: string): HTMLElement {
+  const box = el("section", undefined, "edit-link");
+  box.append(el("h3", m.editLink.heading), el("p", m.editLink.body, "muted small"), buildCopyControl(link, m.editLink.heading));
+  return box;
+}
+
+// 주최자가 단톡방에 붙여 넣을 조사 링크. 친구에게도 보이지만 맨 아래에 둬서 참여 폼을 밀어내지 않는다.
+function buildShareBox(poll: Poll): HTMLElement {
+  const box = el("section", undefined, "share-link");
+  const link = `${location.origin}/p/${encodeURIComponent(poll.id)}`;
+  box.append(el("h3", m.share.linkHeading), el("p", m.share.linkNote, "muted small"), buildCopyControl(link, m.share.linkHeading));
   return box;
 }
 
@@ -120,6 +134,13 @@ async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTM
 
   const loaded = await fetchAnswers(poll.id, who.id, who.editToken);
   if (!loaded.ok) {
+    // 서버가 이 토큰을 모른다는 건 주최자가 내 참여를 지웠다는 뜻이다. 기억을 지우고 이름 입력으로 돌려보내서
+    // 이 기기에서 다시 참여할 수 있게 한다. 다른 오류(네트워크 등)는 기록을 건드리지 않고 그대로 알린다.
+    if (loaded.code === "EDIT_TOKEN_INVALID") {
+      clearRespondent(poll.id);
+      renderParticipation(poll, container, onSaved, m.editLink.removed);
+      return;
+    }
     container.replaceChildren(greeting, el("p", errorMessage(loaded.code), "error"));
     return;
   }
@@ -161,6 +182,12 @@ async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTM
       status.textContent = "";
 
       const result = await saveAnswers(poll.id, who.id, who.editToken, answers);
+      if (!result.ok && result.code === "EDIT_TOKEN_INVALID") {
+        // 화면을 열어 둔 사이에 주최자가 나를 지운 경우
+        clearRespondent(poll.id);
+        renderParticipation(poll, container, onSaved, m.editLink.removed);
+        return;
+      }
       status.className = result.ok ? "status ok" : "status error";
       status.textContent = result.ok ? m.answers.saved : errorMessage(result.code);
       if (result.ok) {
@@ -179,14 +206,17 @@ async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTM
 
 // 참여 영역은 상태에 따라 셋 중 하나다: 이미 참여함 / 마감됨 / 이름 입력 폼.
 // onChanged는 참여하거나 응답을 저장한 직후 불린다. 결과 화면이 내 변경을 바로 보여 주게 하려는 것이다.
-function renderParticipation(poll: Poll, container: HTMLElement, onChanged: () => void) {
+function renderParticipation(poll: Poll, container: HTMLElement, onChanged: () => void, notice?: string) {
   const stored = loadRespondent(poll.id);
+  // notice는 "참여 기록이 삭제됐어요" 같은 안내다. 어느 분기에서든 맨 위에 보여 준다.
+  const noticeNodes = notice ? [el("p", notice, "error")] : [];
   if (stored) {
     void renderAnswering(poll, stored, container, onChanged);
   } else if (poll.status === "closed") {
-    container.replaceChildren(el("p", m.poll.closed, "muted"), el("p", m.editLink.unrecognizedClosed, "muted"));
+    container.replaceChildren(...noticeNodes, el("p", m.poll.closed, "muted"), el("p", m.editLink.unrecognizedClosed, "muted"));
   } else {
     container.replaceChildren(
+      ...noticeNodes,
       buildJoinForm(poll, () => {
         renderParticipation(poll, container, onChanged);
         onChanged();
@@ -208,6 +238,25 @@ async function renderResults(poll: Poll, container: HTMLElement) {
   );
 }
 
+// 마감하면서 확정 날짜를 정했다면 페이지 맨 위에서 가장 눈에 띄게 보여 준다.
+function buildConfirmedBanner(poll: Poll): HTMLElement | null {
+  if (poll.status !== "closed" || poll.confirmedStartDate === null || poll.confirmedEndDate === null) return null;
+  const banner = el("section", undefined, "confirmed-banner");
+  const text =
+    poll.confirmedStartDate === poll.confirmedEndDate
+      ? formatDate(poll.confirmedStartDate)
+      : format(m.date.range, { start: formatDate(poll.confirmedStartDate), end: formatDate(poll.confirmedEndDate) });
+  banner.append(el("span", m.confirmed.heading, "confirmed-label"), el("strong", text));
+  return banner;
+}
+
+// 마감·다시 열기·삭제가 끝나면 조사를 처음부터 다시 불러와서 배너, 참여 영역, 결과가 모두 새 상태가 되게 한다.
+async function reloadPoll(id: string) {
+  const result = await fetchPoll(id);
+  if (result.ok) showPoll(result.value);
+  else showMessage(m.problem.heading, errorMessage(result.code));
+}
+
 function showPoll(poll: Poll, notice?: string) {
   const period = el("p", undefined, "period");
   period.append(
@@ -221,7 +270,17 @@ function showPoll(poll: Poll, notice?: string) {
   void renderResults(poll, results);
 
   // 수정 링크 처리 결과(잘못된 링크)는 이름 입력 폼 위에 오류로 보여 준다.
-  show(el("h1", poll.title), period, ...(notice ? [el("p", notice, "error")] : []), participation, results);
+  const banner = buildConfirmedBanner(poll);
+  show(
+    ...(banner ? [banner] : []),
+    el("h1", poll.title),
+    period,
+    ...(notice ? [el("p", notice, "error")] : []),
+    participation,
+    results,
+    buildShareBox(poll),
+    ...(isOrganizerView() ? [buildOrganizerPanel(poll, () => void reloadPoll(poll.id))] : []),
+  );
 }
 
 // 주소에 개인 수정 링크(#edit=...)가 있으면 서버로 확인하고, 맞으면 이 브라우저에 기억시킨다.

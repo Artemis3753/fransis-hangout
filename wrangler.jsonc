@@ -12,8 +12,9 @@
     "directory": "./dist",
     // /p/<조사 id> 같은 주소를 열어도 index.html을 돌려줘서 화면이 뜨게 한다.
     "not_found_handling": "single-page-application",
-    // /api/* 만 Worker가 먼저 받고, 나머지는 정적 파일이 먼저 응답한다.
-    "run_worker_first": ["/api/*"],
+    // /api/*와 조사 페이지(/p/*)는 Worker가 먼저 받는다. 조사 페이지는 링크 미리보기용 태그를 서버에서 끼워 넣어야 해서다.
+    // 나머지(스크립트, 스타일, robots.txt 등)는 정적 파일이 먼저 응답한다.
+    "run_worker_first": ["/api/*", "/p/*"],
     "binding": "ASSETS"
   },
   "d1_databases": [

@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "npm run build && wrangler dev",
-    "test": "vitest run",
+    "test": "npm run build && vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json",
     "types": "wrangler types",
     "deploy": "npm run build && wrangler deploy"
