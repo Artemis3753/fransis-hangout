@@ -42,13 +42,18 @@ async function readJsonObject(request: Request): Promise<Record<string, unknown>
   return body as Record<string, unknown>;
 }
 
+// "Authorization: Bearer <값>" 헤더에서 값만 꺼낸다. 형식이 다르거나 없으면 빈 문자열이다.
+function bearerToken(authorization: string | undefined): string {
+  return authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+}
+
 // 키를 글자 단위로 비교하면 응답 시간 차이로 키를 추측할 수 있어서,
 // 양쪽을 SHA-256으로 길이를 맞춘 뒤 상수 시간 비교를 쓴다.
 async function isOrganizerKeyValid(authorization: string | undefined, expected: string) {
   // 비밀값 설정을 빠뜨리면 expected가 빈 문자열이거나 아예 undefined다. 둘 다 "키 없음"과 일치해 버리므로
   // 무조건 거절한다(fail closed). 타입은 string이지만 운영에서는 설정 누락으로 undefined가 올 수 있다.
   if (!expected) return false;
-  const supplied = authorization?.startsWith("Bearer ") ? authorization.slice("Bearer ".length) : "";
+  const supplied = bearerToken(authorization);
   const encoder = new TextEncoder();
   const [a, b] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(supplied)),
@@ -199,6 +204,181 @@ app.post("/api/polls/:id/respondents", async (c) => {
   }
 
   return c.json({ respondent, editToken }, 201);
+});
+
+// 이 토큰이 정말 이 조사의 이 응답자 것인지 확인한다. 토큰은 DB에 해시로만 있어서 요청의 토큰도 해시해서 비교한다.
+// 없는 응답자, 다른 조사, 틀린 토큰을 구분하지 않고 모두 false로 돌려준다(응답자 존재 여부를 알려 주지 않으려는 것).
+async function isRespondentToken(db: D1Database, pollId: string, respondentId: string, authorization: string | undefined) {
+  const token = bearerToken(authorization);
+  if (token === "") return false;
+  const row = await db
+    .prepare("SELECT 1 AS ok FROM respondents WHERE id = ? AND poll_id = ? AND token_hash = ?")
+    .bind(respondentId, pollId, await sha256Hex(token))
+    .first();
+  return row !== null;
+}
+
+const editTokenInvalid = { error: { code: "EDIT_TOKEN_INVALID" } };
+
+const AVAILABILITY_STATES = ["preferred", "available", "unavailable"];
+
+// 저장 요청의 answers({ "YYYY-MM-DD": 상태 })를 모두 검사한다. 하나라도 틀리면 그 오류 코드를 돌려줘서
+// 호출한 쪽이 아무것도 저장하지 않게 한다(전부 저장되거나 전부 거절되거나).
+function parseAnswers(
+  input: unknown,
+  startDay: number,
+  endDay: number,
+): { ok: true; entries: [string, string][] } | { ok: false; code: string } {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { ok: false, code: "INVALID_REQUEST" };
+  }
+  const entries = Object.entries(input);
+  for (const [date, state] of entries) {
+    const day = toDayNumber(date);
+    if (day === null) return { ok: false, code: "INVALID_DATE" };
+    if (day < startDay || day > endDay) return { ok: false, code: "DATE_OUT_OF_RANGE" };
+    if (typeof state !== "string" || !AVAILABILITY_STATES.includes(state)) {
+      return { ok: false, code: "INVALID_AVAILABILITY" };
+    }
+  }
+  return { ok: true, entries: entries as [string, string][] };
+}
+
+// 내 응답 전체를 교체한다. 토큰 확인, 마감 확인, 입력 검증을 모두 통과해야 저장한다.
+app.put("/api/polls/:id/respondents/:respondentId/answers", async (c) => {
+  const respondentId = c.req.param("respondentId");
+  if (!(await isRespondentToken(c.env.DB, c.req.param("id"), respondentId, c.req.header("authorization")))) {
+    return c.json(editTokenInvalid, 401);
+  }
+
+  // 응답자가 이 조사에 속한다는 것은 위 인증에서 확인됐고 외래키가 보장하므로, 조사는 반드시 있다.
+  const poll = (await c.env.DB.prepare("SELECT start_date, end_date, status FROM polls WHERE id = ?")
+    .bind(c.req.param("id"))
+    .first<{ start_date: string; end_date: string; status: "open" | "closed" }>())!;
+  // 마감된 조사는 응답을 고칠 수 없다. 읽기(GET)는 막지 않아서 내 응답은 계속 볼 수 있다.
+  if (poll.status === "closed") {
+    return c.json({ error: { code: "POLL_CLOSED" } }, 409);
+  }
+
+  const body = await readJsonObject(c.req.raw);
+  if (body === null) {
+    return c.json({ error: { code: "INVALID_REQUEST" } }, 400);
+  }
+  const parsed = parseAnswers(body.answers, toDayNumber(poll.start_date)!, toDayNumber(poll.end_date)!);
+  if (!parsed.ok) {
+    return c.json({ error: { code: parsed.code } }, 400);
+  }
+
+  // 삭제와 삽입을 한 번의 batch(트랜잭션)로 묶어서, 중간에 실패해도 이전 응답이 그대로 남게 한다.
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM answers WHERE respondent_id = ?").bind(respondentId),
+    ...parsed.entries.map(([date, state]) =>
+      c.env.DB.prepare("INSERT INTO answers (respondent_id, date, state) VALUES (?, ?, ?)").bind(respondentId, date, state),
+    ),
+  ]);
+
+  return c.json({ answers: Object.fromEntries(parsed.entries) });
+});
+
+app.get("/api/polls/:id/respondents/:respondentId/answers", async (c) => {
+  if (!(await isRespondentToken(c.env.DB, c.req.param("id"), c.req.param("respondentId"), c.req.header("authorization")))) {
+    return c.json(editTokenInvalid, 401);
+  }
+
+  const { results } = await c.env.DB.prepare("SELECT date, state FROM answers WHERE respondent_id = ? ORDER BY date")
+    .bind(c.req.param("respondentId"))
+    .all<{ date: string; state: string }>();
+
+  return c.json({ answers: Object.fromEntries(results.map((row) => [row.date, row.state])) });
+});
+
+const dayNumberToIso = (dayNumber: number) => new Date(dayNumber * 86_400_000).toISOString().slice(0, 10);
+
+type DayResult = {
+  date: string;
+  preferred: string[];
+  available: string[];
+  unavailable: string[];
+  unanswered: number;
+  unanimous: boolean;
+};
+
+// 후보일 순위. 안 되는 사람이 적을수록, 그다음 선호가 많을수록, 그다음 가능이 많을수록 앞이고,
+// 전부 같으면 이른 날짜가 앞이다. "안 되는 사람 최소화"를 가장 위에 둔 것은 한 명이라도 못 오는 날을
+// 선호가 많다는 이유로 앞세우지 않기 위해서다. 아무도 답하지 않은 날은 비교할 근거가 없어서 순위에서 뺀다.
+function rankDays(days: DayResult[]): string[] {
+  return days
+    .filter((day) => day.preferred.length + day.available.length + day.unavailable.length > 0)
+    .sort(
+      (a, b) =>
+        a.unavailable.length - b.unavailable.length ||
+        b.preferred.length - a.preferred.length ||
+        b.available.length - a.available.length ||
+        // YYYY-MM-DD 문자열은 사전순 비교가 곧 날짜순 비교다.
+        (a.date < b.date ? -1 : a.date > b.date ? 1 : 0),
+    )
+    .map((day) => day.date);
+}
+
+// 링크를 아는 사람은 누구나 읽을 수 있다(토큰 없음). 응답마다 이름이 함께 나가는 것은 의도한 동작이다:
+// 친구 모임에서 "누가 어느 날 되는지" 보는 것이 이 조사의 목적이다.
+app.get("/api/polls/:id/results", async (c) => {
+  const pollId = c.req.param("id");
+  const poll = await c.env.DB.prepare("SELECT start_date, end_date FROM polls WHERE id = ?")
+    .bind(pollId)
+    .first<{ start_date: string; end_date: string }>();
+  if (poll === null) {
+    return c.json({ error: { code: "POLL_NOT_FOUND" } }, 404);
+  }
+
+  // 두 조회를 한 번의 batch로 보내서 같은 시점의 데이터로 센다. 따로 보내면 그 사이에 저장이 끼어들어
+  // "응답 없음" 수가 어긋날 수 있다. 같은 이름 목록 순서를 쓰려고 정렬 기준(참여 순서)도 같게 둔다.
+  const [respondentRows, answerRows] = await c.env.DB.batch([
+    c.env.DB.prepare("SELECT id, display_name FROM respondents WHERE poll_id = ? ORDER BY created_at, id").bind(pollId),
+    c.env.DB.prepare(
+      `SELECT a.respondent_id, a.date, a.state, r.display_name
+       FROM answers a JOIN respondents r ON r.id = a.respondent_id
+       WHERE r.poll_id = ?
+       ORDER BY r.created_at, r.id`,
+    ).bind(pollId),
+  ]);
+  const respondentCount = respondentRows.results.length;
+  const answers = answerRows.results as { respondent_id: string; date: string; state: string; display_name: string }[];
+
+  const namesByDate = new Map<string, Record<"preferred" | "available" | "unavailable", string[]>>();
+  for (const row of answers) {
+    let names = namesByDate.get(row.date);
+    if (!names) {
+      names = { preferred: [], available: [], unavailable: [] };
+      namesByDate.set(row.date, names);
+    }
+    names[row.state as keyof typeof names].push(row.display_name);
+  }
+
+  const days: DayResult[] = [];
+  for (let day = toDayNumber(poll.start_date)!; day <= toDayNumber(poll.end_date)!; day++) {
+    const date = dayNumberToIso(day);
+    const { preferred, available, unavailable } = namesByDate.get(date) ?? { preferred: [], available: [], unavailable: [] };
+    const answered = preferred.length + available.length + unavailable.length;
+    days.push({
+      date,
+      preferred,
+      available,
+      unavailable,
+      unanswered: respondentCount - answered,
+      // 답한 사람이 없는 날은 "모두 된다"가 아니라 "모른다"라서 제외한다.
+      unanimous: answered > 0 && unavailable.length === 0,
+    });
+  }
+
+  return c.json({
+    results: {
+      respondentCount,
+      answeredCount: new Set(answers.map((row) => row.respondent_id)).size,
+      days,
+      ranking: rankDays(days),
+    },
+  });
 });
 
 export default app;

@@ -35,3 +35,35 @@ export function joinPoll(pollId: string, name: unknown) {
     body: JSON.stringify({ name }),
   });
 }
+
+/** 조사에 참여하고 이후 요청에 쓸 응답자 id와 수정 토큰을 돌려준다. 다른 테스트의 준비 단계용. */
+export async function joinAs(pollId: string, name = "민지") {
+  const res = await joinPoll(pollId, name);
+  const body = (await res.json()) as { respondent: { id: string }; editToken: string };
+  return { respondentId: body.respondent.id, token: body.editToken };
+}
+
+const answersPath = (pollId: string, respondentId: string) => `/api/polls/${pollId}/respondents/${respondentId}/answers`;
+
+function withToken(token: string | null): Record<string, string> {
+  return token === null ? {} : { authorization: `Bearer ${token}` };
+}
+
+/** 내 응답 전체를 교체한다. body는 { answers: { "YYYY-MM-DD": 상태 } } 모양이다. */
+export function saveAnswers(pollId: string, respondentId: string, token: string | null, body: unknown) {
+  return api(answersPath(pollId, respondentId), {
+    method: "PUT",
+    headers: { "content-type": "application/json", ...withToken(token) },
+    body: JSON.stringify(body),
+  });
+}
+
+/** 조사의 결과(날짜별 집계와 순위)를 읽는다. 링크만 알면 되므로 토큰이 없다. */
+export function readResults(pollId: string) {
+  return api(`/api/polls/${pollId}/results`);
+}
+
+/** 저장된 내 응답을 읽는다. */
+export function readAnswers(pollId: string, respondentId: string, token: string | null) {
+  return api(answersPath(pollId, respondentId), { headers: withToken(token) });
+}

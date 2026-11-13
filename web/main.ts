@@ -1,7 +1,9 @@
 import "./style.css";
-import { fetchPoll, joinPoll, type Poll } from "./api";
+import { fetchAnswers, fetchPoll, fetchResults, joinPoll, saveAnswers, type Answers, type Poll } from "./api";
+import { buildCalendar } from "./calendar";
 import { errorMessage, format, messages as m } from "./i18n";
-import { loadRespondent, saveRespondent } from "./storage";
+import { buildResults } from "./results";
+import { loadRespondent, saveRespondent, type StoredRespondent } from "./storage";
 
 // "2026-12-01" → "2026년 12월 1일". Date 객체를 거치지 않아서 보는 사람의 시간대와 무관하다.
 function formatDate(iso: string): string {
@@ -74,16 +76,90 @@ function buildJoinForm(poll: Poll, onJoined: () => void): HTMLFormElement {
   return form;
 }
 
+// 참여한 사람에게 보여 주는 화면: 인사, 달력, 저장 버튼. 마감된 조사는 달력을 읽기 전용으로 보여 준다.
+async function renderAnswering(poll: Poll, who: StoredRespondent, container: HTMLElement, onSaved: () => void) {
+  const greeting = el("p", format(m.join.joined, { name: who.name }), "joined");
+  container.replaceChildren(greeting, el("p", m.answers.loading, "muted"));
+
+  const loaded = await fetchAnswers(poll.id, who.id, who.editToken);
+  if (!loaded.ok) {
+    container.replaceChildren(greeting, el("p", errorMessage(loaded.code), "error"));
+    return;
+  }
+
+  // 달력이 이 객체를 직접 고치고, 저장할 때 통째로 서버에 보낸다.
+  const answers: Answers = { ...loaded.value };
+  const closed = poll.status === "closed";
+
+  // 저장 결과를 알리는 자리. 스크린리더가 바뀔 때 읽어 주도록 role=status를 둔다.
+  const status = el("p", undefined, "status");
+  status.setAttribute("role", "status");
+
+  const calendar = buildCalendar({
+    startDate: poll.startDate,
+    endDate: poll.endDate,
+    answers,
+    readOnly: closed,
+    // 고치는 순간 "저장했어요"가 남아 있으면 저장된 것으로 오해하니 지운다.
+    onChange: () => {
+      status.textContent = "";
+    },
+  });
+
+  const parts: HTMLElement[] = [greeting, el("p", m.calendar.hint, "muted"), calendar];
+
+  if (closed) {
+    parts.push(el("p", m.answers.closedNote, "muted"));
+  } else {
+    const button = el("button", m.answers.save, "save");
+    button.type = "button";
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = m.answers.saving;
+      status.textContent = "";
+
+      const result = await saveAnswers(poll.id, who.id, who.editToken, answers);
+      status.className = result.ok ? "status ok" : "status error";
+      status.textContent = result.ok ? m.answers.saved : errorMessage(result.code);
+      if (result.ok) onSaved();
+
+      button.disabled = false;
+      button.textContent = m.answers.save;
+    });
+    parts.push(button, status);
+  }
+
+  container.replaceChildren(...parts);
+}
+
 // 참여 영역은 상태에 따라 셋 중 하나다: 이미 참여함 / 마감됨 / 이름 입력 폼.
-function renderParticipation(poll: Poll, container: HTMLElement) {
+// onChanged는 참여하거나 응답을 저장한 직후 불린다. 결과 화면이 내 변경을 바로 보여 주게 하려는 것이다.
+function renderParticipation(poll: Poll, container: HTMLElement, onChanged: () => void) {
   const stored = loadRespondent(poll.id);
   if (stored) {
-    container.replaceChildren(el("p", format(m.join.joined, { name: stored.name }), "joined"));
+    void renderAnswering(poll, stored, container, onChanged);
   } else if (poll.status === "closed") {
     container.replaceChildren(el("p", m.poll.closed, "muted"));
   } else {
-    container.replaceChildren(buildJoinForm(poll, () => renderParticipation(poll, container)));
+    container.replaceChildren(
+      buildJoinForm(poll, () => {
+        renderParticipation(poll, container, onChanged);
+        onChanged();
+      }),
+    );
   }
+}
+
+// 결과는 열 때 한 번 불러온다(실시간 갱신은 없다). 다시 불러올 때는 이전 화면을 그대로 두고 완료되면 바꿔서 깜빡이지 않게 한다.
+async function renderResults(poll: Poll, container: HTMLElement) {
+  if (!container.hasChildNodes()) {
+    container.replaceChildren(el("h2", m.results.heading), el("p", m.results.loading, "muted"));
+  }
+  const loaded = await fetchResults(poll.id);
+  container.replaceChildren(
+    el("h2", m.results.heading),
+    loaded.ok ? buildResults(poll, loaded.value) : el("p", errorMessage(loaded.code), "error"),
+  );
 }
 
 function showPoll(poll: Poll) {
@@ -93,10 +169,12 @@ function showPoll(poll: Poll) {
     el("strong", format(m.date.range, { start: formatDate(poll.startDate), end: formatDate(poll.endDate) })),
   );
 
+  const results = el("section", undefined, "results-section");
   const participation = el("section", undefined, "participation");
-  renderParticipation(poll, participation);
+  renderParticipation(poll, participation, () => void renderResults(poll, results));
+  void renderResults(poll, results);
 
-  show(el("h1", poll.title), period, participation);
+  show(el("h1", poll.title), period, participation, results);
 }
 
 async function main() {

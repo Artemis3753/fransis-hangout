@@ -51,6 +51,10 @@ The response contains the poll's public `id`. Share `/p/<id>` with the group. A 
 
 Friends join a poll by name, with no login: they open `/p/<id>` and type a name (at most 20 characters, unique within the poll ignoring case, surrounding spaces and Hangul composition form; at most 30 people per poll). The browser remembers the join on that device.
 
+After joining, a friend marks each candidate day as preferred (★), available (○) or unavailable (✕) by tapping it (a day left untouched is "no answer", never "unavailable") and saves. Saving replaces all of that person's previous answers in one transaction, and only the holder of the edit token that was issued at join time can change them. The token travels in an `Authorization: Bearer` header, never in the URL.
+
+Anyone with the link can read the results (`GET /api/polls/<id>/results`, no token): per day, the names who chose preferred, available or unavailable and how many have not answered, plus "M of N answered" and a ranking of candidate days. The ranking orders days by fewest unavailable, then most preferred, then most available, then earliest date. A day nobody answered is never ranked. A day is flagged unanimous when at least one person answered it and everyone who did chose preferred or available. The page loads results when it opens (no live updates) and reloads them right after you join or save.
+
 ## Test
 
 ```sh
