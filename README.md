@@ -44,7 +44,7 @@ Polls are created through the API with the organizer key (there is no creation f
 curl -X POST http://localhost:8787/api/polls \
   -H "authorization: Bearer $ORGANIZER_KEY" \
   -H "content-type: application/json" \
-  -d '{"title":"Winter trip","startDate":"2026-12-01","endDate":"2027-01-31"}'
+  -d '{"title":"Winter trip","startDate":"2026-12-01","endDate":"2026-12-31"}'
 ```
 
 The response contains the poll's public `id`. Share `/p/<id>` with the group. A poll can span at most 92 days (both ends counted) and its title at most 60 characters.
@@ -57,9 +57,9 @@ After the first save, the page shows the respondent's personal edit link (`/p/<i
 
 The organizer (anyone holding the organizer key) can close a poll with an optional confirmed date range (`POST /api/polls/<id>/close`), reopen it (`POST /api/polls/<id>/reopen`, which clears the confirmed range) and remove a respondent (`DELETE /api/polls/<id>/respondents/<respondent id>`). Each of these checks the key before anything else. While a poll is closed, joining and saving are refused, results stay readable, and a confirmed range is shown at the top of the page. Removing a respondent deletes their answers, frees their name and invalidates their edit link. In the browser, open `/p/<id>#organizer` to get these controls and type the key into the password field; the key is kept in memory only, so a reload asks for it again.
 
-The poll page also carries a "copy link" box. The Worker injects the poll title, a description and `og:` tags into `/p/<id>` (KakaoTalk's preview scraper reads the HTML the server sends and does not run scripts); whether KakaoTalk really shows a preview card is still to be checked on a real phone, see `docs/phone-check.md`. `npm test` builds the frontend first because the page tests serve the built `index.html`.
+The poll page also carries a "copy link" box. The Worker injects the poll title, a description and `og:` tags into `/p/<id>` (KakaoTalk's preview scraper reads the HTML the server sends and does not run scripts); the preview card was seen once, on one phone, on 2026-11-13, so it is not a guarantee for every KakaoTalk version; see `docs/phone-check.md`. `npm test` builds the frontend first because the page tests serve the built `index.html`.
 
-Anyone with the link can read the results (`GET /api/polls/<id>/results`, no token): per day, the names who chose preferred, available or unavailable and how many have not answered, plus "M of N answered" and a ranking of candidate days. The ranking orders days by fewest unavailable, then most preferred, then most available, then earliest date. A day nobody answered is never ranked. A day is flagged unanimous when at least one person answered it and everyone who did chose preferred or available. The page loads results when it opens (no live updates) and reloads them right after you join or save.
+Anyone with the link can read the results (`GET /api/polls/<id>/results`, no token): per day, the names who chose preferred, available or unavailable and how many have not answered, plus "M of N answered", a ranking of candidate days, and a list of every respondent (id, name and whether they have answered). The ids are visible to anyone with the link, but an id alone cannot read or change answers (that needs the edit token) and removing a respondent needs the organizer key. The ranking orders days by fewest unavailable, then most preferred, then most available, then earliest date. A day nobody answered is never ranked. A day is flagged unanimous when at least one person answered it and everyone who did chose preferred or available. The page loads results when it opens (no live updates) and reloads them right after you join or save.
 
 ## Test
 

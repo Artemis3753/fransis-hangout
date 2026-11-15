@@ -1,6 +1,6 @@
 # Real-phone check (ticket 08)
 
-**Status: DONE (2026-11-13).** The organizer reported every step (A, B, B2, B3, C, D, E) fine on a real phone. Only the card in step A was seen in a screenshot; the other steps are the organizer's own report, with no detail recorded. Phone model, OS and KakaoTalk version were not recorded.
+**Status: DONE with gaps (2026-11-13; gaps noted in the 2026-11-15 review).** The storage question (step C) is not really answered: only an "all fine" report exists, with no description of what was seen, and the phone details below are blank. The organizer reported every step (A, B, B2, B3, C, D, E) fine on a real phone. Only the card in step A was seen in a screenshot; the other steps are the organizer's own report, with no detail recorded. Phone model, OS and KakaoTalk version were not recorded.
 
 The calendar screen has no automated tests, so this hand check is the only proof that tapping, saving, the edit link and the results view work on a phone and inside KakaoTalk. It also answers one open question: **does KakaoTalk's in-app browser keep a respondent's stored data after the link is closed and reopened?** (The edit link makes the design safe either way, but the answer decides how often people will need it.)
 
