@@ -1,112 +1,342 @@
+/*
+ * 디자인 언어: "트란시스 일정표"의 구조(배경·카드·글자·보조글자·선 + 의미별 "진한 색 / 옅은 배경" 쌍,
+ * 큰 둥근 패널, 알약 칩, 폰 우선 한 줄 흐름)만 가져왔다. 마스코트와 일정 종류별 색의 뜻은 가져오지 않았다.
+ * 의미 색(시안 A, 신호등): 선호=금색, 가능=초록, 불가=빨강, 응답 없음=회색. 기호(★ ○ ✕)가 색과 함께 뜻을 전한다.
+ *
+ * 색은 아래 :root 한 곳에 라이트 값을 두고, 다크는 두 블록(OS 설정 / 수동 선택)에서 같은 이름으로 다시 정의한다.
+ * 컴포넌트는 항상 토큰만 쓴다. 글자색은 옅은 배경 위에서 4.5:1 이상이 나오게 레퍼런스보다 진하게 잡았다.
+ */
 :root {
-  --bg: #fbfaf7;
-  --fg: #1f1d1a;
-  --muted: #6b665e;
-  --accent: #2f5d50;
-  --border: #e3dfd6;
-  --error: #b3261e;
+  --bg: #f5f6fa;
+  --card: #ffffff;
+  --ink: #23242b;
+  --muted: #636676;
+  --line: #e6e8ef;
+  /* 입력칸 테두리는 배경과 3:1 이상 떨어져야 칸이 보여서 --line보다 진하다 */
+  --field-line: #8a8d9c;
+
+  --pref-bg: #fbefc4;
+  --pref-fg: #7a5a00;
+  --avail-bg: #d9f3e7;
+  --avail-fg: #0f6b45;
+  --no-bg: #ffe2e5;
+  --no-fg: #b3262f;
+  --none-bg: #eceef4;
+  --none-fg: #5f6270;
+
+  /* 모두 가능한 날 같은 "꽉 찬" 강조 */
+  --solid-green: #167a50;
+  --on-solid: #ffffff;
+
+  /* 주최자·확정·진행 상황처럼 응답 상태가 아닌 것에 쓰는 바이올렛 */
+  --accent: #5b3fd0;
+  --accent-soft: #e8e2ff;
+  --on-accent: #ffffff;
+  --focus: #5b3fd0;
+
+  --shadow-panel: 0 1px 2px rgba(20, 22, 40, 0.04), 0 8px 24px rgba(20, 22, 40, 0.05);
+  --shadow-float: 0 8px 24px rgba(20, 22, 40, 0.18);
+
+  --font-display: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17181a;
-    --fg: #ecebe7;
-    --muted: #a09b92;
-    --accent: #7fc4ad;
-    --border: #2c2e31;
-    --error: #ff8a7a;
+  :root:not([data-theme="light"]) {
+    --bg: #15161b;
+    --card: #1f2027;
+    --ink: #eceef4;
+    --muted: #a2a5b3;
+    --line: #2e3039;
+    --field-line: #6c6f7e;
+    --pref-bg: #3a3217;
+    --pref-fg: #f0c75a;
+    --avail-bg: #173a2c;
+    --avail-fg: #5fd9a3;
+    --no-bg: #3d2126;
+    --no-fg: #ff8d99;
+    --none-bg: #2a2c35;
+    --none-fg: #aeb1bf;
+    --solid-green: #2fbf86;
+    --on-solid: #0b2a1e;
+    --accent: #a48bff;
+    --accent-soft: #2a2347;
+    --on-accent: #1b1440;
+    --focus: #b6a3ff;
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #15161b;
+  --card: #1f2027;
+  --ink: #eceef4;
+  --muted: #a2a5b3;
+  --line: #2e3039;
+  --field-line: #6c6f7e;
+  --pref-bg: #3a3217;
+  --pref-fg: #f0c75a;
+  --avail-bg: #173a2c;
+  --avail-fg: #5fd9a3;
+  --no-bg: #3d2126;
+  --no-fg: #ff8d99;
+  --none-bg: #2a2c35;
+  --none-fg: #aeb1bf;
+  --solid-green: #2fbf86;
+  --on-solid: #0b2a1e;
+  --accent: #a48bff;
+  --accent-soft: #2a2347;
+  --on-accent: #1b1440;
+  --focus: #b6a3ff;
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* hidden 속성이 아래의 display 규칙에 덮이지 않게 한다(상세 패널이 처음부터 보이는 문제 방지). */
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--fg);
-  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  line-height: 1.6;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  /* 한글은 단어 단위로 줄을 바꾸고, 사용자가 입력한 긴 제목·이름은 어디서든 꺾는다 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
+/* 한 줄 세로 흐름(폰 우선). 넓어지면 참여 달력과 결과가 두 칸이 된다. */
 #app {
-  max-width: 40rem;
+  display: grid;
+  gap: 18px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 2rem 1rem;
+  padding: 20px 16px 40px;
+}
+
+#app > * {
+  min-width: 0;
+}
+
+@media (min-width: 760px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  #app > * {
+    grid-column: 1 / -1;
+  }
+
+  #app > .participation {
+    grid-column: 1;
+  }
+
+  #app > .results-section {
+    grid-column: 2;
+  }
+}
+
+/* ---- 머리 ---- */
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .site-name {
-  margin: 0 0 1.5rem;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
   color: var(--accent);
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.theme {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.theme:hover {
+  border-color: var(--muted);
+}
+
+.theme svg {
+  width: 19px;
+  height: 19px;
 }
 
 h1 {
-  margin: 0 0 1rem;
-  font-size: 1.6rem;
-  line-height: 1.3;
-  word-break: keep-all;
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
   overflow-wrap: anywhere;
 }
 
-.period {
+h2,
+h3 {
   margin: 0;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+}
+
+.period {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 12px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
 }
 
 .period-label {
-  display: block;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 12.5px;
 }
 
 .muted {
   color: var(--muted);
 }
 
-.participation {
-  margin-top: 1.5rem;
+.small {
+  margin: 0;
+  font-size: 12.5px;
 }
 
-.join-form {
+/* ---- 패널: 흰 카드, 큰 둥근 모서리 ---- */
+.participation,
+.results-section,
+.share-link,
+.organizer {
   display: grid;
-  gap: 0.5rem;
+  gap: 12px;
+  align-content: start;
+  padding: 16px;
+  border-radius: 22px;
+  background: var(--card);
+  box-shadow: var(--shadow-panel);
 }
 
-.join-form label {
-  font-size: 0.9rem;
+.participation > *,
+.results-section > *,
+.results > * {
+  margin: 0;
+}
+
+.results-section h2,
+.organizer h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 19px;
+}
+
+/* 패널 안의 작은 제목(추천 날짜, 참여자 등) */
+.results-subheading,
+.organizer h3,
+.edit-link h3,
+.share-link h3 {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* ---- 입력과 버튼 ---- */
+.join-form,
+.organizer label {
+  display: grid;
+  gap: 8px;
+}
+
+.join-form label,
+.organizer label {
   color: var(--muted);
+  font-size: 13px;
 }
 
 /* 입력칸 글자를 16px 이상으로 둬야 iOS Safari가 포커스 때 화면을 확대하지 않는다. */
-.join-form input {
+.join-form input,
+.edit-link-row input,
+.organizer input {
+  width: 100%;
+  min-width: 0;
   min-height: 2.75rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
+  padding: 0 12px;
+  border: 1.5px solid var(--field-line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--ink);
   font: inherit;
   font-size: 1rem;
 }
 
-.join-form button {
+input::placeholder {
+  color: var(--muted);
+}
+
+/* 주 버튼은 글자색과 배경색을 뒤집은 모양(검정 바탕에 흰 글자, 다크에서는 반대) */
+.join-form button,
+.save,
+.edit-link-row button {
   min-height: 2.75rem;
+  padding: 0 16px;
   border: 0;
-  border-radius: 0.5rem;
-  background: var(--accent);
-  color: var(--bg);
+  border-radius: 12px;
+  background: var(--ink);
+  color: var(--card);
   font: inherit;
-  font-weight: 600;
+  font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.join-form button:disabled {
+.save {
+  width: 100%;
+}
+
+.join-form button:disabled,
+.save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.organizer-button,
+.detail-close {
+  min-height: 2.5rem;
+  padding: 0 14px;
+  border: 1.5px solid var(--field-line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.organizer-button:disabled {
   opacity: 0.6;
   cursor: default;
 }
@@ -114,44 +344,92 @@ h1 {
 .error {
   margin: 0;
   min-height: 1.5em;
-  color: var(--error);
+  color: var(--no-fg);
+}
+
+.status {
+  margin: 0;
+  min-height: 1.5em;
+}
+
+.status.ok {
+  color: var(--avail-fg);
+}
+
+.status.error {
+  color: var(--no-fg);
 }
 
 .joined {
   margin: 0;
-  font-weight: 600;
-  color: var(--accent);
+  color: var(--avail-fg);
+  font-weight: 700;
+}
+
+/* 키보드 포커스는 모든 컨트롤에서 같은 색·같은 두께로 보인다 */
+:is(button, input, a, summary):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* ---- 달력 ---- */
 .calendar {
-  margin-top: 1rem;
+  display: grid;
+  gap: 14px;
 }
 
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  margin: 0 0 1rem;
+  gap: 6px;
+  margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 0.9rem;
+}
+
+/* 알약 칩: 옅은 배경 + 진한 글자. 칩 색은 아래 달력 칸과 같은 의미 색이다. */
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--none-bg);
+  color: var(--none-fg);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.legend-item[data-state="preferred"] {
+  background: var(--pref-bg);
+  color: var(--pref-fg);
+}
+
+.legend-item[data-state="available"] {
+  background: var(--avail-bg);
+  color: var(--avail-fg);
+}
+
+.legend-item[data-state="unavailable"] {
+  background: var(--no-bg);
+  color: var(--no-fg);
 }
 
 .legend-symbol {
   display: inline-block;
-  width: 1.25rem;
   text-align: center;
-  font-weight: 700;
 }
 
 .month {
-  margin-bottom: 1.5rem;
+  display: grid;
+  gap: 8px;
 }
 
 .month-title {
-  margin: 0 0 0.5rem;
-  font-size: 1.1rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 17px;
 }
 
 .weekdays,
@@ -159,13 +437,19 @@ h1 {
   display: grid;
   /* minmax(0, 1fr): 칸 내용이 넓어도 7칸이 화면 폭을 넘지 않게 해서 폰에서 가로 스크롤이 생기지 않는다. */
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.25rem;
+  gap: 4px;
 }
 
 .weekday {
-  text-align: center;
+  padding-bottom: 2px;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.weekday:first-child {
+  color: var(--no-fg);
 }
 
 .day {
@@ -174,31 +458,41 @@ h1 {
   align-items: center;
   justify-content: center;
   min-height: 2.9rem;
-  padding: 0.15rem 0;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 10px;
+  /* 응답 없음 = 회색 칸 */
+  background: var(--none-bg);
+  color: var(--none-fg);
   font: inherit;
+  font-size: 13px;
   line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 
 button.day {
   cursor: pointer;
 }
 
-.day.blank {
-  border-color: transparent;
+button.day:disabled {
+  cursor: default;
 }
 
+.day.blank {
+  background: none;
+}
+
+/* 조사 기간 밖: 눌러도 반응하지 않는 점선 칸 */
 .day.outside {
-  border-style: dashed;
+  background: none;
+  outline: 1.5px dashed var(--line);
+  outline-offset: -1.5px;
   color: var(--muted);
-  opacity: 0.45;
+  opacity: 0.55;
 }
 
 .day-number {
-  font-size: 0.8rem;
+  font-size: 13px;
 }
 
 .day-symbol {
@@ -207,148 +501,109 @@ button.day {
   font-weight: 700;
 }
 
-/* 색 + 기호(★ ○ ✕)가 같이 상태를 알려 준다. 불가능은 빗금 배경으로 한 번 더 구분한다. */
+/* 색 + 기호(★ ○ ✕)가 같이 상태를 알려 준다 */
 .day[data-state="preferred"] {
-  background: color-mix(in srgb, var(--accent) 35%, transparent);
-  border-color: var(--accent);
+  background: var(--pref-bg);
+  color: var(--pref-fg);
+  font-weight: 700;
 }
 
 .day[data-state="available"] {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-color: var(--accent);
+  background: var(--avail-bg);
+  color: var(--avail-fg);
 }
 
 .day[data-state="unavailable"] {
-  background: repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--muted) 30%, transparent) 5px 7px);
-  color: var(--muted);
-}
-
-button.day:disabled {
-  cursor: default;
-}
-
-button.day:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.save {
-  width: 100%;
-  min-height: 2.75rem;
-  margin-top: 0.5rem;
-  border: 0;
-  border-radius: 0.5rem;
-  background: var(--accent);
-  color: var(--bg);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.save:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.status {
-  margin: 0.5rem 0 0;
-  min-height: 1.5em;
-}
-
-.status.ok {
-  color: var(--accent);
-}
-
-.status.error {
-  color: var(--error);
+  background: var(--no-bg);
+  color: var(--no-fg);
 }
 
 /* ---- 결과 ---- */
-.results-section {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border);
-}
-
-.results-section h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.3rem;
+.results {
+  display: grid;
+  gap: 12px;
 }
 
 .results-progress {
-  margin: 0 0 1rem;
-  font-weight: 600;
+  justify-self: start;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
   color: var(--accent);
-}
-
-.results-subheading {
-  margin: 1rem 0 0.25rem;
-  font-size: 1.05rem;
-}
-
-.small {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .best-list {
   display: grid;
-  gap: 0.5rem;
-  margin: 0 0 1.5rem;
+  gap: 8px;
+  margin: 0;
   padding: 0;
   list-style: none;
   counter-reset: rank;
 }
 
+/* 한 줄: [순위 배지 | 날짜 + 집계 | 만장일치 알약] */
 .best-button {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.25rem 0.75rem;
+  gap: 2px 12px;
   width: 100%;
   min-height: 2.75rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
+  padding: 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--ink);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-/* 순위 숫자는 목록 번호(<ol>)가 아니라 CSS 카운터로 그려서 버튼 안쪽 왼쪽에 둔다. */
+/* 순위 숫자는 목록 번호(<ol>)가 아니라 CSS 카운터로 그려서 버튼 안쪽 왼쪽의 번호 배지로 둔다 */
 .best-button::before {
   counter-increment: rank;
   content: counter(rank);
-  grid-row: span 1;
-  color: var(--accent);
-  font-weight: 700;
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  background: var(--pref-bg);
+  color: var(--pref-fg);
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
 }
 
 .best-date {
-  font-weight: 600;
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: 700;
 }
 
 .best-counts {
   grid-column: 2;
+  grid-row: 2;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 12.5px;
 }
 
 .badge {
   grid-column: 3;
   grid-row: 1 / span 2;
-  padding: 0.1rem 0.5rem;
+  padding: 2px 10px;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--bg);
-  font-size: 0.8rem;
-  font-weight: 600;
+  background: var(--solid-green);
+  color: var(--on-solid);
+  font-size: 12.5px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
-/* 결과 칸: 숫자 두 줄이 들어가야 해서 응답 달력의 칸보다 조금 높다. */
+/* 결과 칸: 숫자 두 줄이 들어가야 해서 응답 달력의 칸보다 조금 높다 */
 .day.result-day {
   min-height: 3.6rem;
   cursor: pointer;
@@ -357,73 +612,63 @@ button.day:focus-visible {
 .result-can,
 .result-no {
   min-height: 1.1em;
-  font-size: 0.75rem;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.result-no {
-  color: var(--muted);
+.result-can {
+  color: var(--avail-fg);
 }
 
-/* 모두 가능한 날: 색에만 기대지 않도록 테두리를 굵게 하고, 위 범례에 뜻을 적어 둔다. */
+.result-no {
+  color: var(--no-fg);
+}
+
+/* 모두 가능한 날: 색에만 기대지 않도록 굵은 테두리를 더하고, 위 범례에 뜻을 적어 둔다 */
 .day.result-day[data-unanimous] {
-  border: 2px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  background: var(--avail-bg);
+  box-shadow: inset 0 0 0 2px var(--solid-green);
 }
 
 .day.result-day[aria-pressed="true"] {
-  outline: 2px solid var(--fg);
+  outline: 2px solid var(--ink);
   outline-offset: 1px;
 }
 
-.day.result-day:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* 날짜 상세는 화면 아래에 붙어 따라온다. 달력이 길어도 눌러 본 날의 상세가 화면 밖으로 밀려나지 않는다. */
+/* 날짜 상세는 화면 아래에 붙어 따라온다. 달력이 길어도 눌러 본 날의 상세가 화면 밖으로 밀려나지 않는다 */
 .detail {
   position: sticky;
-  bottom: 0.5rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--accent);
-  border-radius: 0.75rem;
-  background: var(--bg);
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
-}
-
-.detail[hidden] {
-  display: none;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--shadow-float);
 }
 
 .detail-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .detail-close {
   min-height: 2.25rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.85rem;
-  cursor: pointer;
+  font-size: 13px;
 }
 
 .detail-list {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.15rem 0.75rem;
-  margin: 0.5rem 0;
+  gap: 2px 12px;
+  margin: 0;
 }
 
 .detail-state {
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -435,118 +680,63 @@ button.day:focus-visible {
 .detail-unanswered {
   margin: 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 12.5px;
 }
 
-/* ---- 개인 수정 링크 ---- */
-.edit-link,
-.share-link {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
+/* ---- 개인 수정 링크 / 조사 링크 ---- */
+.edit-link {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1.5px dashed var(--line);
+  border-radius: 16px;
 }
 
-.edit-link h3,
-.share-link h3 {
-  margin: 0 0 0.25rem;
-  font-size: 1rem;
+.edit-link > *,
+.share-link > * {
+  margin: 0;
 }
 
 .edit-link-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.5rem;
-}
-
-/* 16px 이상이어야 iOS Safari가 포커스 때 화면을 확대하지 않는다. */
-.edit-link-row input {
-  min-height: 2.75rem;
-  min-width: 0;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: 1rem;
-}
-
-.edit-link-row button {
-  min-height: 2.75rem;
-  padding: 0 1rem;
-  border: 0;
-  border-radius: 0.5rem;
-  background: var(--accent);
-  color: var(--bg);
-  font: inherit;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
+  gap: 8px;
 }
 
 /* ---- 확정 날짜 배너 ---- */
 .confirmed-banner {
-  margin: 0 0 1rem;
-  padding: 1rem;
-  border-radius: 0.75rem;
+  display: grid;
+  gap: 2px;
+  padding: 16px;
+  border-radius: 22px;
   background: var(--accent);
-  color: var(--bg);
+  color: var(--on-accent);
 }
 
 .confirmed-label {
-  display: block;
-  font-size: 0.85rem;
-  opacity: 0.85;
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
 .confirmed-banner strong {
-  font-size: 1.25rem;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1.2;
 }
 
-/* ---- 주최자 메뉴 ---- */
+/* ---- 주최자 메뉴: 친구들 화면과 구분되게 점선 테두리 ---- */
 .organizer {
-  margin-top: 2rem;
-  padding: 1rem;
-  border: 1px dashed var(--accent);
-  border-radius: 0.75rem;
-}
-
-.organizer h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.2rem;
-}
-
-.organizer h3 {
-  margin: 1.25rem 0 0.25rem;
-  font-size: 1rem;
-}
-
-.organizer label {
-  display: block;
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-
-/* 16px 이상이어야 iOS Safari가 포커스 때 화면을 확대하지 않는다. */
-.organizer input {
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: 1rem;
+  border: 1.5px dashed var(--accent);
 }
 
 .organizer-date {
-  margin-top: 0.5rem;
+  display: grid;
+  gap: 8px;
 }
 
 .organizer-list {
-  margin: 0.5rem 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -555,34 +745,23 @@ button.day:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .organizer-name {
   overflow-wrap: anywhere;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-.organizer-button {
-  min-height: 2.5rem;
-  margin-top: 0.5rem;
-  padding: 0 0.9rem;
-  border: 1px solid var(--accent);
-  border-radius: 0.5rem;
-  background: transparent;
-  color: var(--accent);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
+/* 모션 줄이기를 켠 사람에게는 움직임을 없앤다(장식용 전환만 여기에 둔다) */
+@media (prefers-reduced-motion: no-preference) {
+  button.day {
+    transition: transform 0.15s ease;
+  }
 
-.organizer-item .organizer-button {
-  margin-top: 0;
-}
-
-.organizer-button:disabled {
-  opacity: 0.6;
-  cursor: default;
+  button.day:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
 }

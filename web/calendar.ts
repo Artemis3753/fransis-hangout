@@ -102,6 +102,8 @@ function buildLegend(): HTMLElement {
   const legend = node("ul", "legend");
   for (const state of ["preferred", "available", "unavailable"] as const) {
     const item = node("li", "legend-item");
+    // 칩 색이 달력 칸의 상태 색과 같아지도록 CSS가 이 값을 본다.
+    item.dataset.state = state;
     item.append(node("span", "legend-symbol", SYMBOL[state]), document.createTextNode(m.availability[state]));
     legend.append(item);
   }

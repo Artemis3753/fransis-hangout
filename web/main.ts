@@ -6,6 +6,7 @@ import { buildEditLink, parseEditHash } from "./editLink";
 import { buildResults } from "./results";
 import { buildOrganizerPanel, isOrganizerView } from "./organizer";
 import { clearRespondent, loadRespondent, saveRespondent, type StoredRespondent } from "./storage";
+import { buildThemeToggle } from "./theme";
 
 // "2026-12-01" → "2026년 12월 1일". Date 객체를 거치지 않아서 보는 사람의 시간대와 무관하다.
 function formatDate(iso: string): string {
@@ -24,7 +25,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, classN
 
 function show(...nodes: HTMLElement[]) {
   const app = document.getElementById("app")!;
-  app.replaceChildren(el("p", m.app.title, "site-name"), ...nodes);
+  const head = el("header", undefined, "head");
+  head.append(el("p", m.app.title, "site-name"), buildThemeToggle());
+  app.replaceChildren(head, ...nodes);
 }
 
 function showMessage(heading: string, body: string) {
